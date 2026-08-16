@@ -265,3 +265,79 @@ destroys reproducibility. I have a test that runs the derivation in two subproce
 different `PYTHONHASHSEED` values and asserts the seeds match, and a companion test
 asserting that raw `hash()` does *not* match, so the reason the code is written that way is
 executable rather than a comment somebody deletes in a year."
+
+---
+
+## A2 (cont.) — Tick loop and metrics (`orbit/engine/simulation.py`, `metrics.py`)
+
+**WHAT.** The fixed-timestep loop (`Simulation.step` / `run` / `reset` / `measure`), the
+per-flow derived quantities (delivered rate, congestive loss, intrinsic loss, latency), and
+the run summary (PDR overall and per class, throughput, weighted mean and p95 latency).
+
+**WHY.**
+
+* *Why integer time.* Simulation time is `tick_index * tick_ms`, never a float that
+  accumulates. This is not theoretical fastidiousness: a mutation test that replaced the
+  integer arithmetic with `time += 0.1` produced `0.9999999999999999` after **ten ticks**.
+  Over a 20,000-tick run that drift silently shifts every flow's activity window, and it
+  would be discovered — if at all — as an unreproducible benchmark months later.
+* *Why latency is `None`, not `0.0`, when nothing was delivered.* §7 requires latency to be
+  weighted over delivered traffic only. Recording zero for a flow that delivered nothing
+  would make a congested run look *faster* than a healthy one, because the worst-off flows
+  would contribute the best latencies. This is a statistics trap the methodology doc
+  anticipates, and the type system now enforces it: `float | None` forces every consumer to
+  decide what to do about it.
+* *Why the summary refuses to report a PDR over zero demand.* `pdr` is `float | None`, and
+  `None` when nothing was demanded. Neither 0.0 nor 1.0 is true, and folding a fabricated
+  value into an aggregate is the same class of bias as counting a partitioned run as an
+  instant recovery — which B4 explicitly forbids.
+* *Why `run()` is a generator.* A 500-node, 20,000-tick run produces millions of samples.
+  Returning a list would make the engine's memory ceiling the run length, against N1
+  (8 GB laptop). Streaming lets `MetricsAccumulator` fold results into running totals.
+
+**HOW.** Per tick: select active flows by their half-open `[start, start+duration)` window,
+allocate, then derive. Half-open matters — a closed interval would double-count one tick at
+every flow handover, inflating offered demand.
+
+**A specification ambiguity I had to resolve.** §4 defines delivered rate as "the allocation
+result" and lists intrinsic loss as a *separate* metric, implying they are never composed.
+But `05-methodology.md` A4 requires a 100%-loss link to yield `delivered = 0`. Both cannot
+hold. The resolution, documented in `metrics.py`:
+
+```
+allocated_mbps = what the allocator granted     <- this consumes link capacity
+delivered_mbps = allocated * (1 - intrinsic_loss)  <- this is what PDR uses
+```
+
+Both are recorded, so congestion and medium loss stay distinguishable — a controller can
+reroute around the first but not the second. Note the asymmetry: capacity is consumed by
+the *allocated* rate, because traffic dropped by a lossy link partway along a path has
+already occupied the links before it. Modelling it the other way would quietly hand lossy
+paths extra effective capacity.
+
+**TRADEOFFS.**
+
+| Decision | Gained | Given up |
+|---|---|---|
+| Static routing for now | Loop works today, and it *is* baseline B1 | Steps 1–3 of the tick loop (events, detector, recompute) wait for A3/A4 |
+| `run()` yields lazily | Memory bounded by the caller's choice, not run length | Callers must opt into `list()` |
+| Summary in the engine, Parquet in A7 | `orbit/` stays I/O-free per architecture §1 | No file output yet |
+| Exact weighted p95 | Correct percentile, not an approximation | Latency samples retained; marked `# ponytail:` with a histogram as the upgrade |
+| Queue delay `min(q_max, k/(C-L))` | Monotone, bounded, no division by zero | An approximation, labelled as one; affects absolute latency only, identically for every algorithm |
+
+**HOW I EXPLAIN IT IN AN INTERVIEW.** "Two decisions in the tick loop are worth more than
+the loop itself. First, simulation time is an integer tick count multiplied by the tick
+length, never a running float sum. I proved that mattered by breaking it deliberately — the
+float version drifts off 1.0 after ten ticks, and in a twenty-thousand-tick benchmark that
+silently moves every flow's schedule.
+
+Second, latency is `None` rather than zero when a flow delivered nothing. That sounds
+pedantic until you work out what averaging zeros does: the flows that were starved
+contribute the *best* latencies, so the more congested the network gets, the faster it
+looks. The methodology document flagged that trap, and encoding it as `float | None` means
+every consumer has to make a decision about it rather than silently averaging in a lie.
+
+I also hit a genuine contradiction between two of my own design documents about whether
+link loss reduces delivered rate. Rather than pick one silently, I found the edge case that
+settles it — a 100%-loss link has to deliver zero — wrote the resolution into the module
+docstring, and made that edge case a named test."

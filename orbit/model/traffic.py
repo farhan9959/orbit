@@ -98,6 +98,17 @@ class Flow:
             raise ValidationError(f"{owner}: duration_s must be > 0, got {duration!r}")
         set_(self, "duration_s", duration)
 
+    def is_active_at(self, time_s: float) -> bool:
+        """True if the flow is offering traffic at simulation time `time_s`.
+
+        Half-open interval `[start_s, start_s + duration_s)`. Half-open so that a flow
+        ending exactly when another begins produces no tick where both are counted, which
+        would inflate offered demand by one tick's worth at every handover.
+
+        `duration_s` may be infinite, in which case the upper bound never binds.
+        """
+        return self.start_s <= time_s < self.start_s + self.duration_s
+
 
 def validate_flows(topology: Topology, flows: Iterable[Flow]) -> tuple[Flow, ...]:
     """Return `flows` sorted by id, after checking them against `topology`.

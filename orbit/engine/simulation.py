@@ -230,6 +230,11 @@ class Simulation:
             link_load=allocation.link_load,
             events=tuple(events),
             control_seconds=control_seconds,
+            topology=truth,
+            routing={
+                flow_id: tuple(route.links for route, _ in placement_paths(placement))
+                for flow_id, placement in sorted(self._routing.items())
+            },
         )
 
     def _changed_routes(self, routing: RoutingState) -> bool:

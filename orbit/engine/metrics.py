@@ -85,6 +85,8 @@ class TickResult:
     link_load: Mapping[LinkId, float]
     events: tuple[Event, ...] = ()
     control_seconds: float | None = None
+    topology: Topology | None = None
+    routing: Mapping[FlowId, tuple[tuple[LinkId, ...], ...]] | None = None
 
 
 @dataclass(frozen=True, slots=True)

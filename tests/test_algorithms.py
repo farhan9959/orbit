@@ -18,7 +18,7 @@ from orbit.algorithms import (
     shortest_path_tree,
     shortest_route,
 )
-from orbit.engine import Simulation
+from orbit.engine import Simulation, allocate
 from orbit.generators import barabasi_albert, grid, ring, waxman
 from orbit.model import Flow, GraphView, Link, LinkState, Node, PathSet, Priority, Route, Topology
 
@@ -237,8 +237,11 @@ def test_orbit_preempts_a_low_flow_to_admit_a_critical_one() -> None:
     routing = controller.recompute(view_of(topology), flows, installed)
 
     assert "f_crit" in routing
-    assert "f_low" not in routing
     assert any(event.type.value == "FLOW_PREEMPTED" for event in controller.drain_events())
+
+    allocation = allocate(topology, flows, routing)
+    assert allocation.rates["f_crit"] == pytest.approx(10.0)
+    assert allocation.rates["f_low"] == pytest.approx(0.0)
 
 
 def test_orbit_never_preempts_an_equal_or_higher_priority_flow() -> None:
@@ -252,11 +255,17 @@ def test_orbit_never_preempts_an_equal_or_higher_priority_flow() -> None:
     controller = OrbitController()
     routing = controller.recompute(view_of(topology), flows, installed)
 
-    assert routing == installed
+    assert routing["f_a"] == installed["f_a"]
     assert not any(event.type.value == "FLOW_PREEMPTED" for event in controller.drain_events())
+
+    allocation = allocate(topology, flows, routing)
+    assert allocation.rates["f_a"] == pytest.approx(5.0)
+    assert allocation.rates["f_b"] == pytest.approx(5.0)
 
 
 def test_orbit_ablation_switches_change_behaviour() -> None:
+    """With preemption off the victim keeps its route; the allocator still enforces
+    precedence, so preemption is a placement mechanism rather than a rate one."""
     nodes = [Node("n0"), Node("n1")]
     topology = Topology(nodes, [Link("e0", "n0", "n1", capacity_mbps=10.0)])
     flows = [
@@ -268,8 +277,11 @@ def test_orbit_ablation_switches_change_behaviour() -> None:
     routing = without.recompute(view_of(topology), flows, installed)
 
     assert "f_low" in routing
-    assert "f_crit" not in routing
     assert not any(event.type.value == "FLOW_PREEMPTED" for event in without.drain_events())
+
+    allocation = allocate(topology, flows, routing)
+    assert allocation.rates["f_crit"] == pytest.approx(10.0)
+    assert allocation.rates["f_low"] == pytest.approx(0.0)
 
 
 def test_orbit_disabled_restoration_places_nothing_new() -> None:
@@ -324,3 +336,35 @@ def test_shortest_route_returns_none_when_unreachable() -> None:
     nodes = [Node("n0"), Node("n1")]
     topology = Topology(nodes, [Link("e0", "n1", "n0", capacity_mbps=1.0)])
     assert shortest_route(topology, "n0", "n1") is None
+
+
+def test_orbit_places_best_effort_rather_than_blackholing_at_the_ingress() -> None:
+    """A blackholed flow is unserved in full; a best-effort flow gets what is left.
+
+    The objective minimises weighted unserved demand, so declining to place a flow that
+    fits nowhere is strictly worse under the stated objective - and it would also be an
+    unfair asymmetry, because CSPF carries such flows best-effort.
+    """
+    nodes = [Node("n0"), Node("n1")]
+    topology = Topology(nodes, [Link("e0", "n0", "n1", capacity_mbps=10.0)])
+    flows = [
+        Flow("f_crit", "n0", "n1", demand_mbps=10.0, priority=Priority.CRITICAL),
+        Flow("f_low", "n0", "n1", demand_mbps=10.0, priority=Priority.LOW),
+    ]
+
+    placed = OrbitController().recompute(view_of(topology), flows, {})
+    assert set(placed) == {"f_crit", "f_low"}
+
+    ablated = OrbitController(OrbitConfig(best_effort_fallback=False)).recompute(
+        view_of(topology), flows, {}
+    )
+    assert set(ablated) == {"f_crit"}
+
+
+def test_orbit_and_cspf_blackhole_the_same_unreachable_flows() -> None:
+    nodes = [Node("n0"), Node("n1"), Node("n2")]
+    topology = Topology(nodes, [Link("e0", "n0", "n1", capacity_mbps=10.0)])
+    flows = [Flow("f0", "n0", "n2", demand_mbps=1.0)]
+
+    assert OrbitController().recompute(view_of(topology), flows, {}) == {}
+    assert ConstrainedShortestPath().recompute(view_of(topology), flows, {}) == {}

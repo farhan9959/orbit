@@ -16,3 +16,7 @@ htmlcov/
 # Raw experiment output is large and regenerable; committed summaries live beside it.
 experiments/results/*.parquet
 experiments/figures/*.png
+web/node_modules/
+web/dist/
+web/public/data/*.json
+.claude/launch.json

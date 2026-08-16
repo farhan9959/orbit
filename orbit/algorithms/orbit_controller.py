@@ -31,6 +31,11 @@ Assumptions and failure modes:
   both fail where another assignment would have served all three.
 * Stale view: between failure and detection the controller routes on a graph that no longer
   exists, which bounds how good time-to-restore can be.
+* Best-effort fallback: a flow that fits nowhere is still placed on its shortest path rather
+  than blackholed at the ingress, matching CSPF. The objective minimises weighted *unserved*
+  demand, and a blackholed flow is unserved in full while a best-effort flow receives
+  whatever the allocator has left. Blackholing it instead would be both worse under the
+  stated objective and an unfair asymmetry against ORBIT in the comparison.
 """
 
 from __future__ import annotations
@@ -68,6 +73,7 @@ class OrbitConfig:
     restoration: bool = True
     preemption: bool = True
     damping: bool = True
+    best_effort_fallback: bool = True
     latency_weight: float = 1.0
     utilisation_weight: float = 10.0
     max_reroutes_per_window: int = 3
@@ -207,6 +213,9 @@ class OrbitController(BaseAlgorithm):
 
         if route is None and config.preemption and flow.priority >= config.min_preemption_priority:
             route = self._preempt(flow, topology, residual, holders, routing, tick, requeued, by_id)
+
+        if route is None and config.best_effort_fallback:
+            route = self._constrained_route(topology, residual, flow, ignore_capacity=True)
 
         if route is None:
             return

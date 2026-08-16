@@ -59,6 +59,20 @@ from orbit.model import (
     Topology,
 )
 
+
+def _utilisation(free: float, capacity: float) -> float:
+    """Fraction of a link already committed, clamped to [0, 1].
+
+    Dijkstra requires non-negative edge weights. Residual capacity is allowed to go negative
+    (honest bookkeeping for an oversubscribed link) and, after a preemption releases a
+    victim, can briefly exceed the link's capacity, so the raw ratio is not safe to use as a
+    cost term without clamping.
+    """
+    if capacity <= 0.0:
+        return 1.0
+    return min(1.0, max(0.0, 1.0 - free / capacity))
+
+
 PRIORITY_WEIGHTS: dict[Priority, float] = {
     Priority.CRITICAL: 1000.0,
     Priority.HIGH: 100.0,
@@ -300,7 +314,7 @@ class OrbitController(BaseAlgorithm):
         def cost(link: Link) -> float:
             capacity = link.effective_capacity_mbps
             free = residual.get(link.id, 0.0)
-            utilisation = 1.0 - (free / capacity) if capacity > 0.0 else 1.0
+            utilisation = _utilisation(free, capacity)
             return config.latency_weight * link.prop_delay_ms + (
                 config.utilisation_weight * utilisation
             )
@@ -426,7 +440,7 @@ class OrbitController(BaseAlgorithm):
         flow: Flow,
     ) -> None:
         for link_id in route.links:
-            residual[link_id] = max(0.0, residual.get(link_id, 0.0) - flow.demand_mbps)
+            residual[link_id] = residual.get(link_id, 0.0) - flow.demand_mbps
             holders.setdefault(link_id, []).append(flow.id)
 
     @staticmethod

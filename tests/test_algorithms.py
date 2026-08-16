@@ -368,3 +368,41 @@ def test_orbit_and_cspf_blackhole_the_same_unreachable_flows() -> None:
 
     assert OrbitController().recompute(view_of(topology), flows, {}) == {}
     assert ConstrainedShortestPath().recompute(view_of(topology), flows, {}) == {}
+
+
+def test_preemption_never_produces_a_negative_dijkstra_cost() -> None:
+    """Releasing a preempted victim must not push residual above capacity.
+
+    `_reserve` and `_release` have to be exact inverses. When reserve clamped at zero and
+    release did not clamp at capacity, preempting a victim on a saturated link handed back
+    more than was taken, residual exceeded capacity, utilisation went negative and Dijkstra
+    was handed a negative edge weight. A 4200-run grid crashed on it.
+    """
+    from orbit.algorithms.orbit_controller import _utilisation
+
+    assert _utilisation(free=150.0, capacity=100.0) == 0.0
+    assert _utilisation(free=-50.0, capacity=100.0) == 1.0
+    assert _utilisation(free=0.0, capacity=0.0) == 1.0
+    assert _utilisation(free=25.0, capacity=100.0) == pytest.approx(0.75)
+
+
+def test_orbit_survives_heavy_preemption_without_invalid_costs() -> None:
+    topology = waxman(30, seed=17, capacity_mbps=40.0)
+    ids = sorted(topology.nodes)
+    flows = [
+        Flow(
+            f"f{index:03d}",
+            ids[index % len(ids)],
+            ids[(index * 7 + 3) % len(ids)],
+            demand_mbps=35.0,
+            priority=list(Priority)[index % 4],
+        )
+        for index in range(60)
+        if ids[index % len(ids)] != ids[(index * 7 + 3) % len(ids)]
+    ]
+    controller = OrbitController()
+    routing: dict[str, object] = {}
+    for tick in range(6):
+        view = GraphView(topology, tick, changed=True)
+        routing = dict(controller.recompute(view, flows, routing))  # type: ignore[arg-type]
+    assert routing

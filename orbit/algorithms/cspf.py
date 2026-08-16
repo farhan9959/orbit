@@ -37,6 +37,12 @@ from orbit.model import (
 )
 
 
+def _utilisation(free: float, capacity: float) -> float:
+    if capacity <= 0.0:
+        return 1.0
+    return min(1.0, max(0.0, 1.0 - free / capacity))
+
+
 class ConstrainedShortestPath(BaseAlgorithm):
     name = "cspf"
 
@@ -84,7 +90,7 @@ class ConstrainedShortestPath(BaseAlgorithm):
     def _cost(self, residual: dict[LinkId, float], topology_link: Link) -> float:
         capacity = topology_link.effective_capacity_mbps
         free = residual.get(topology_link.id, 0.0)
-        utilisation = 1.0 - (free / capacity) if capacity > 0.0 else 1.0
+        utilisation = _utilisation(free, capacity)
         return (
             self._latency_weight * topology_link.prop_delay_ms
             + self._utilisation_weight * utilisation

@@ -201,16 +201,30 @@ def run_experiment(
 
 
 def git_sha() -> tuple[str, bool]:
+    """Return the current commit and whether the *code* differs from it.
+
+    The runner writes its results into the working tree, so a plain `git status --porcelain`
+    would report every run as dirty and no result could ever be reportable. Output
+    directories are therefore excluded; a change anywhere else still marks the run dirty.
+    """
     try:
         sha = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
         ).strip()
-        dirty = bool(
-            subprocess.check_output(
-                ["git", "status", "--porcelain"], text=True, stderr=subprocess.DEVNULL
-            ).strip()
+        status = subprocess.check_output(
+            [
+                "git",
+                "status",
+                "--porcelain",
+                "--",
+                ".",
+                ":(exclude)experiments/results",
+                ":(exclude)experiments/figures",
+            ],
+            text=True,
+            stderr=subprocess.DEVNULL,
         )
-        return sha, dirty
+        return sha, bool(status.strip())
     except (OSError, subprocess.CalledProcessError):
         return "unknown", True
 

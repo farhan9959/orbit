@@ -1,0 +1,75 @@
+"""Committed experiment specifications, fixed before results exist (B3 rule 6)."""
+
+from __future__ import annotations
+
+from orbit.detect import ControlMode
+from orbit.scenarios import (
+    ExperimentSpec,
+    FailureScenario,
+    ScenarioSpec,
+    TopologyFamily,
+    scenario_grid,
+)
+
+FAMILIES = (
+    TopologyFamily.GRID,
+    TopologyFamily.RING,
+    TopologyFamily.WAXMAN,
+    TopologyFamily.SCALE_FREE,
+)
+
+FAILURES = (
+    FailureScenario.NONE,
+    FailureScenario.RANDOM_NODE_10,
+    FailureScenario.RANDOM_NODE_30,
+    FailureScenario.CRITICAL_LINK,
+    FailureScenario.REGIONAL_SRLG,
+    FailureScenario.CONGESTION_SURGE,
+    FailureScenario.CASCADING,
+)
+
+A8_HEADLINE = ExperimentSpec(
+    name="a8-headline",
+    scenarios=scenario_grid(FAMILIES, FAILURES, nodes=60, flows=150, offered_load=0.7, ticks=150),
+    trials=30,
+)
+
+A8_DUAL_CONTROL = ExperimentSpec(
+    name="a8-dual-control",
+    scenarios=tuple(
+        ScenarioSpec(
+            family=TopologyFamily.WAXMAN,
+            nodes=60,
+            flows=150,
+            offered_load=0.7,
+            ticks=150,
+            failure=failure,
+            control_mode=mode,
+        )
+        for failure in (FailureScenario.CRITICAL_LINK, FailureScenario.RANDOM_NODE_30)
+        for mode in (ControlMode.CENTRALISED, ControlMode.DISTRIBUTED)
+    ),
+    trials=30,
+)
+
+A8_LOAD_SWEEP = ExperimentSpec(
+    name="a8-load-sweep",
+    scenarios=tuple(
+        ScenarioSpec(
+            family=TopologyFamily.WAXMAN,
+            nodes=60,
+            flows=150,
+            offered_load=load,
+            ticks=150,
+            failure=FailureScenario.CRITICAL_LINK,
+        )
+        for load in (0.3, 0.5, 0.7, 0.9, 1.2)
+    ),
+    trials=30,
+)
+
+SMOKE = ExperimentSpec(
+    name="smoke",
+    scenarios=(ScenarioSpec(nodes=25, flows=40, ticks=50),),
+    trials=3,
+)

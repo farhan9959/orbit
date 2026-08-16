@@ -42,3 +42,14 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 python_version = "3.12"
 files = ["orbit"]
 strict = true
+
+# CLAUDE.md scopes strict typing to orbit/. The experiment harness is followed only because
+# orbit/cli.py imports it, and its numeric dependencies ship no stubs.
+[[tool.mypy.overrides]]
+module = ["experiments.*"]
+disallow_untyped_defs = false
+disallow_any_generics = false
+
+[[tool.mypy.overrides]]
+module = ["pandas.*", "scipy.*", "matplotlib.*", "networkx.*", "pyarrow.*"]
+ignore_missing_imports = true

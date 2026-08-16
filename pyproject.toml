@@ -1,0 +1,44 @@
+[project]
+name = "orbit"
+version = "0.0.1"
+description = "Flow-level network resilience simulator and evaluation harness"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+
+# The engine has no runtime dependencies. docs/02-architecture.md §2 lists NumPy for the
+# allocator; it is deliberately not added yet, because the allocator is pure Python until
+# a profile of a real benchmark cell says otherwise (architecture §8, mitigation 3).
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "hypothesis>=6.100",
+    "ruff>=0.6",
+    "black>=24.8",
+    "mypy>=1.11",
+]
+
+[tool.pytest.ini_options]
+# Keeps the repository root importable without an editable install, so `pytest` works from
+# a clean checkout with nothing but the dev extras present.
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["orbit"]
+strict = true

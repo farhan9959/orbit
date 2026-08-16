@@ -101,6 +101,46 @@ equally.
 
 ---
 
+## Load sweep — where the advantage lives, and where it reverses
+
+Waxman, 60 nodes, critical-link failure, 30 paired trials per load. Median CRITICAL PDR:
+
+| Offered load | spf-static | spf-reconverge | ecmp | cspf | orbit |
+|---|---|---|---|---|---|
+| 0.3 | 0.948 | 0.999 | 0.999 | 1.000 | 0.999 |
+| 0.5 | 0.936 | 0.999 | 0.999 | 1.000 | 0.999 |
+| 0.7 | 0.876 | 0.939 | 0.939 | 0.981 | **0.999** |
+| 0.9 | 0.829 | 0.855 | 0.855 | 0.930 | **0.951** |
+| 1.2 | 0.709 | 0.744 | 0.744 | **0.809** | 0.743 |
+
+This is the most informative single table in the study, and it contains a result that
+contradicts the project's own hypothesis.
+
+* **Below 0.5 the question is moot.** There is enough capacity for everyone; every
+  reconverging algorithm delivers essentially all CRITICAL traffic and priority awareness
+  has nothing to decide.
+* **Between 0.7 and 0.9 ORBIT leads**, by +0.018 and +0.021 CRITICAL PDR over CSPF. This is
+  the regime the mechanism is for: a real shortage, but one that a good decision can still
+  route around.
+* **At 1.2 the advantage reverses.** ORBIT falls to 0.743 against CSPF's 0.809 — ORBIT is
+  now *worse on the class it exists to protect*. Under sustained overload the greedy
+  priority-ordered placement commits capacity to high-priority flows on paths that then
+  block other high-priority flows, while CSPF's demand-ordered placement packs the network
+  better. Preemption cannot undo it, because victims are restricted to strictly lower
+  priorities and there are no longer enough of them to displace.
+
+**H1 must therefore be scoped to a load range**, not stated generally. The mechanism helps
+in a band around 0.7-0.9 offered load and hurts beyond it. Overall PDR (below) shows ORBIT
+trailing CSPF at every load, consistent with H3.
+
+| Offered load | cspf overall | orbit overall |
+|---|---|---|
+| 0.3 | 0.997 | 0.995 |
+| 0.5 | 0.936 | 0.900 |
+| 0.7 | 0.762 | 0.683 |
+| 0.9 | 0.603 | 0.497 |
+| 1.2 | 0.455 | 0.362 |
+
 ## Other measured results
 
 * **Cascade depth is 10.0 for every algorithm**, i.e. every cascading run hit the configured

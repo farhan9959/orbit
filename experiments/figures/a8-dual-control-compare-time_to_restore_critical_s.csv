@@ -1,9 +1,0 @@
-metric,scenario,baseline,challenger,n_pairs,n_censored,baseline_median,challenger_median,median_difference,ci_low,ci_high,p_value,p_holm,cliffs_delta,effect
-time_to_restore_critical_s,waxman-n60-load0.7-critical_link-centralised,cspf,orbit,26,4,0.0,0.0,0.0,0.0,0.0,0.3281256265805622,1.0,0.11538461538461539,negligible
-time_to_restore_critical_s,waxman-n60-load0.7-critical_link-centralised,ecmp,orbit,25,5,0.0,0.0,0.0,0.0,0.0,0.5219052641890858,1.0,-0.08,negligible
-time_to_restore_critical_s,waxman-n60-load0.7-critical_link-centralised,spf-reconverge,orbit,25,5,0.0,0.0,0.0,0.0,0.0,0.5219052641890858,1.0,-0.08,negligible
-time_to_restore_critical_s,waxman-n60-load0.7-critical_link-centralised,spf-static,orbit,17,13,0.0,0.0,0.0,0.0,0.0,0.39489095121872864,1.0,0.11764705882352941,negligible
-time_to_restore_critical_s,waxman-n60-load0.7-critical_link-distributed,cspf,orbit,29,1,0.0,0.0,0.0,0.0,0.30000000000000004,0.0017386009467301577,0.013908807573841261,0.4114149821640904,medium
-time_to_restore_critical_s,waxman-n60-load0.7-critical_link-distributed,ecmp,orbit,29,1,0.0,0.0,0.0,0.0,0.0,1.0,1.0,0.0,negligible
-time_to_restore_critical_s,waxman-n60-load0.7-critical_link-distributed,spf-reconverge,orbit,29,1,0.0,0.0,0.0,0.0,0.0,1.0,1.0,0.0,negligible
-time_to_restore_critical_s,waxman-n60-load0.7-critical_link-distributed,spf-static,orbit,15,15,0.0,0.0,0.0,0.0,0.0,0.20466688077047124,1.0,0.2,small

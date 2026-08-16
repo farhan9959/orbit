@@ -1,5 +1,21 @@
 # A8 — the go/no-go gate: findings
 
+> **INVALIDATED - DO NOT CITE. Results files removed; re-run pending.**
+>
+> Every number below was produced before commit `fc415d9`, which fixed an unfair asymmetry
+> in ORBIT: it blackholed flows that did not fit residual capacity, while CSPF carried the
+> same flows best-effort. ORBIT was therefore penalised by a modelling defect rather than by
+> its mechanism, and the aggregate-delivery findings in particular measured that defect.
+>
+> On a single demo scenario after the fix, ORBIT leads CSPF on overall PDR (0.664 vs 0.635)
+> where it previously trailed, so the H3 verdict below is expected to change. The results
+> files have been deleted rather than left in place, because keeping known-invalid data
+> committed is worse than having none.
+>
+> Re-run with `make bench` on a clean tree, then rewrite this document against the new
+> numbers before any of it is quoted.
+
+
 Source: `experiments/results/a8-headline.parquet` (4,200 runs), `a8-dual-control.parquet`
 (600 runs). 60-node topologies, 150 flows, offered load 0.7, failure injected at t = 2 s,
 30 paired trials per cell, 28 scenarios (4 topology families x 7 failure scenarios).

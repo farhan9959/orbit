@@ -44,11 +44,12 @@ that improves as the network gets worse.
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
 from orbit.errors import ValidationError
+from orbit.events import Event, EventType
 from orbit.model import FlowId, LinkId, Priority, Route, Topology
 
 
@@ -82,6 +83,8 @@ class TickResult:
     time_s: float
     samples: tuple[FlowSample, ...]
     link_load: Mapping[LinkId, float]
+    events: tuple[Event, ...] = ()
+    control_seconds: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +109,13 @@ class RunSummary:
     duration_s: float
     overall: ClassMetrics
     by_priority: Mapping[Priority, ClassMetrics]
+    control_seconds: float = 0.0
+    control_calls: int = 0
+    cascade_depth: int = 0
+    reroutes: int = 0
+    preemptions: int = 0
+    time_to_restore_s: Mapping[Priority, float | None] = field(default_factory=dict)
+    censored: bool = False
     """Only classes that actually appeared in the run. A run with no CRITICAL traffic does
     not report a CRITICAL row, because a PDR over zero demand is not a measurement."""
 
@@ -183,8 +193,6 @@ def _weighted_percentile(pairs: list[tuple[float, float]], quantile: float) -> f
 
 @dataclass
 class _Bucket:
-    """Running totals for one class. Mutable by design; it is an accumulator."""
-
     demanded_mbit: float = 0.0
     delivered_mbit: float = 0.0
     flow_ticks: int = 0
@@ -215,17 +223,46 @@ class _Bucket:
         )
 
 
+_RESTORE_FRACTION = 0.95
+_RESTORE_DWELL_TICKS = 3
+
+
+def time_to_restore(
+    series: Sequence[float], failure_tick: int, tick_seconds: float
+) -> float | None:
+    """First moment delivered rate regains 95% of its pre-failure mean and holds 3 ticks.
+
+    Returns None when the level is never regained, which the caller must treat as censored
+    rather than as an infinite or zero recovery (invariant I-CENSOR).
+    """
+    if failure_tick <= 0 or failure_tick >= len(series):
+        return None
+    window = max(1, round(1.0 / tick_seconds))
+    baseline_slice = series[max(0, failure_tick - window) : failure_tick]
+    if not baseline_slice:
+        return None
+    baseline = math.fsum(baseline_slice) / len(baseline_slice)
+    if baseline <= 0.0:
+        return None
+    target = _RESTORE_FRACTION * baseline
+    held = 0
+    for index in range(failure_tick, len(series)):
+        if series[index] >= target:
+            held += 1
+            if held >= _RESTORE_DWELL_TICKS:
+                start = index - _RESTORE_DWELL_TICKS + 1
+                return (start - failure_tick) * tick_seconds
+        else:
+            held = 0
+    return None
+
+
 class MetricsAccumulator:
     """Folds `TickResult`s into a `RunSummary` without retaining every sample.
 
-    Totals are running sums, so a 20,000-tick run does not have to hold two million sample
-    objects in memory to report a delivery ratio (non-functional requirement N1: the whole
-    thing runs on a laptop).
-
-    # ponytail: latency samples ARE retained, because an exact weighted p95 needs the
-    # distribution. At Tier-A sizes that is acceptable; if a 500-node run runs out of
-    # memory, replace the list with a fixed-bin histogram and report the percentile from
-    # that. Do not do it before a run actually gets big enough to hurt.
+    # ponytail: latency samples and the per-class rate series ARE retained, because an
+    # exact weighted p95 and a time-to-restore both need the distribution. Replace with a
+    # fixed-bin histogram only if a real run runs out of memory.
     """
 
     def __init__(self, tick_seconds: float) -> None:
@@ -236,20 +273,49 @@ class MetricsAccumulator:
         self._tick_seconds = tick_seconds
         self._overall = _Bucket()
         self._by_priority: dict[Priority, _Bucket] = {}
+        self._series: dict[Priority, list[float]] = {}
         self._ticks = 0
+        self._first_failure_tick: int | None = None
+        self._reroutes = 0
+        self._preemptions = 0
 
     def add(self, result: TickResult) -> None:
         self._ticks += 1
+        per_class: dict[Priority, float] = {}
         for sample in result.samples:
             self._overall.add(sample, self._tick_seconds)
             self._by_priority.setdefault(sample.priority, _Bucket()).add(sample, self._tick_seconds)
+            per_class[sample.priority] = per_class.get(sample.priority, 0.0) + sample.delivered_mbps
+        for priority in self._by_priority:
+            self._series.setdefault(priority, [0.0] * (self._ticks - 1)).append(
+                per_class.get(priority, 0.0)
+            )
+        for event in result.events:
+            if event.type is EventType.FAILURE_INJECTED and self._first_failure_tick is None:
+                self._first_failure_tick = result.tick
+            elif event.type is EventType.FLOW_REROUTED:
+                self._reroutes += 1
+            elif event.type is EventType.FLOW_PREEMPTED:
+                self._preemptions += 1
 
     def add_all(self, results: Iterable[TickResult]) -> None:
         for result in results:
             self.add(result)
 
-    def summary(self) -> RunSummary:
+    def summary(
+        self,
+        *,
+        control_seconds: float = 0.0,
+        control_calls: int = 0,
+        cascade_depth: int = 0,
+    ) -> RunSummary:
         duration_s = self._ticks * self._tick_seconds
+        restore: dict[Priority, float | None] = {}
+        if self._first_failure_tick is not None:
+            for priority, series in self._series.items():
+                restore[priority] = time_to_restore(
+                    series, self._first_failure_tick, self._tick_seconds
+                )
         return RunSummary(
             ticks=self._ticks,
             duration_s=duration_s,
@@ -260,4 +326,11 @@ class MetricsAccumulator:
                     for priority in sorted(self._by_priority, reverse=True)
                 }
             ),
+            control_seconds=control_seconds,
+            control_calls=control_calls,
+            cascade_depth=cascade_depth,
+            reroutes=self._reroutes,
+            preemptions=self._preemptions,
+            time_to_restore_s=MappingProxyType(restore),
+            censored=any(value is None for value in restore.values()),
         )

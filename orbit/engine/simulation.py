@@ -1,45 +1,30 @@
-"""The fixed-timestep tick loop.
+"""The fixed-timestep tick loop (docs/03-simulation-model.md §3).
 
-Implements requirements F7 (advance in fixed steps; per step allocate capacity and compute
-delivered rate, loss and latency) and F11 (step, reset, run headless to completion), and
-the tick-loop structure in docs/03-simulation-model.md §3.
+Per tick: apply scheduled failures, update the detector, recompute routes if the control
+plane has news, allocate capacity, derive metrics, record samples and events.
 
-What this loop does *not* do yet
---------------------------------
-docs/03-simulation-model.md §3 lists seven steps per tick. Steps 4-7 are here. Steps 1-3
-are not, because the things they call do not exist:
-
-    1. apply scheduled events   -> failure injection, phase A4
-    2. detector.update(tick)    -> failure detector, phase A3
-    3. algorithm.recompute(...) -> routing algorithms, phase A3
-
-So routing is currently **static**: the `RoutingState` handed to the constructor is used
-for every tick. That is exactly baseline B1 (static shortest path, computed once, never
-recomputed), so the loop is already capable of running one real algorithm — it simply has
-no others to choose between yet. When A3 lands, steps 1-3 become a hook here rather than a
-rewrite, because nothing below depends on the routes being fixed.
-
-Time
-----
-Simulation time is `tick_index * tick_ms`, an integer count of milliseconds converted to
-seconds only for display and for comparing against flow schedules. It is **never** a float
-accumulator: repeatedly adding 0.1 drifts, and drift breaks determinism (I-DET) in a way
-that shows up thousands of ticks into a run and is miserable to diagnose.
-
-Determinism
------------
-There is no clock, no randomness and no mutable state in the loop beyond the tick counter,
-so `reset()` is genuinely just "set the counter to zero" — the topology, the flows and the
-routing are all immutable. That is a property worth noticing rather than a coincidence: it
-is what makes I-DET hold, and it is why `run()` can be replayed and get identical output.
+Assumptions and failure modes:
+* Routing decisions use the detector's `GraphView`; physics uses the ground-truth topology.
+  Between a failure and its detection the controller routes over a graph that no longer
+  exists, and the resulting blackholing is a modelled behaviour, not a bug.
+* Simulation time is `tick_index * tick_ms`, an integer count. A float accumulator drifts
+  off 1.0 within ten ticks and silently shifts every flow's activity window.
+* The loop is single-threaded and holds no randomness of its own; `reset()` restores the
+  tick counter, the algorithm, the schedule and the detector, so a run replays exactly.
+* Control-plane computation time is wall-clock and therefore the one non-deterministic
+  output. It is reported as a measurement, never fed back into simulation state.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from time import perf_counter
 
+from orbit.algorithms.base import RoutingAlgorithm, StaticRouting
+from orbit.detect.detector import DetectorConfig, FailureDetector
 from orbit.engine.allocator import Allocation, allocate
+from orbit.engine.failures import FailureSchedule
 from orbit.engine.metrics import (
     FlowSample,
     MetricsAccumulator,
@@ -49,12 +34,15 @@ from orbit.engine.metrics import (
     queue_delay_ms,
 )
 from orbit.errors import ValidationError
+from orbit.events import Event, EventType
 from orbit.model import (
     Flow,
     LinkId,
     Route,
     RoutingState,
     Topology,
+    placement_links,
+    placement_paths,
     validate_flows,
     validate_routing,
 )
@@ -62,22 +50,16 @@ from orbit.model import (
 _MS_PER_SECOND = 1000.0
 
 
+def _clamp_fraction(value: float) -> float:
+    return min(1.0, max(0.0, value))
+
+
 @dataclass(frozen=True, slots=True)
 class SimulationConfig:
-    """Tunables for the tick loop and the latency model.
-
-    `queue_delay_coefficient` and `max_queue_delay_ms` parameterise an approximation, not a
-    measurement (see `orbit.engine.metrics.queue_delay_ms`). Their defaults are arbitrary
-    but fixed, and because the same values are applied to every algorithm they cannot bias
-    a comparison — only the absolute latency numbers, which is a Threat to Validity and is
-    written down as one.
-    """
-
     tick_ms: int = 100
     queue_delay_coefficient: float = 1.0
-    """`k`, in Mbps·ms. Larger values make delay climb sooner as a link fills."""
     max_queue_delay_ms: float = 50.0
-    """`q_max`. The delay reported for a saturated link, and the ceiling everywhere else."""
+    validate_each_recompute: bool = True
 
     def __post_init__(self) -> None:
         if isinstance(self.tick_ms, bool) or not isinstance(self.tick_ms, int):
@@ -97,31 +79,52 @@ class SimulationConfig:
 
 
 class Simulation:
-    """A replayable fixed-timestep run over a fixed topology, traffic set and routing."""
-
-    __slots__ = ("_config", "_flows", "_routing", "_tick", "_topology")
+    __slots__ = (
+        "_algorithm",
+        "_config",
+        "_control_calls",
+        "_control_seconds",
+        "_detector",
+        "_detector_config",
+        "_flows",
+        "_routing",
+        "_schedule",
+        "_stable_ticks",
+        "_tick",
+        "_topology",
+    )
 
     def __init__(
         self,
         topology: Topology,
         flows: Iterable[Flow],
-        routing: RoutingState,
+        algorithm: RoutingAlgorithm | RoutingState,
         config: SimulationConfig | None = None,
+        *,
+        schedule: FailureSchedule | None = None,
+        detector: DetectorConfig | None = None,
     ) -> None:
-        # Validated once, here, rather than on every tick. This is the boundary a routing
-        # algorithm's output crosses; the per-tick path spends its budget on liveness and
-        # capacity instead, which are the things that actually change between ticks.
-        self._flows: tuple[Flow, ...] = validate_flows(topology, flows)
-        validate_routing(topology, self._flows, routing)
+        self._flows = validate_flows(topology, flows)
+        if isinstance(algorithm, Mapping):
+            validate_routing(topology, self._flows, algorithm)
+            self._algorithm: RoutingAlgorithm = StaticRouting(algorithm)
+        else:
+            self._algorithm = algorithm
         self._topology = topology
-        self._routing = routing
         self._config = config if config is not None else SimulationConfig()
+        self._schedule = schedule
+        self._detector_config = detector or DetectorConfig()
+        self._detector = FailureDetector(topology, self._detector_config, self._config.tick_ms)
         self._tick = 0
+        self._routing: RoutingState = {}
+        self._control_seconds = 0.0
+        self._control_calls = 0
+        self._stable_ticks = 0
 
     def __repr__(self) -> str:
         return (
             f"Simulation(nodes={len(self._topology.nodes)}, flows={len(self._flows)}, "
-            f"tick={self._tick})"
+            f"algorithm={self._algorithm.name!r}, tick={self._tick})"
         )
 
     @property
@@ -129,45 +132,115 @@ class Simulation:
         return self._config
 
     @property
+    def algorithm(self) -> RoutingAlgorithm:
+        return self._algorithm
+
+    @property
     def tick(self) -> int:
-        """Index of the tick that `step()` will produce next."""
         return self._tick
 
     @property
     def time_s(self) -> float:
-        """Simulation time at the start of the next tick."""
         return self._tick * self._config.tick_ms / _MS_PER_SECOND
 
-    def reset(self) -> None:
-        """Rewind to tick 0 (requirement F11).
+    @property
+    def routing(self) -> RoutingState:
+        return self._routing
 
-        Nothing else needs undoing: the topology, flows and routing are immutable, and the
-        loop keeps no other state. A `reset` that had more to do would be a sign the engine
-        had grown hidden state, which is the thing determinism cannot survive.
-        """
+    @property
+    def control_seconds(self) -> float:
+        return self._control_seconds
+
+    @property
+    def control_calls(self) -> int:
+        return self._control_calls
+
+    def reset(self) -> None:
         self._tick = 0
+        self._routing = {}
+        self._control_seconds = 0.0
+        self._control_calls = 0
+        self._stable_ticks = 0
+        self._algorithm.reset()
+        if self._schedule is not None:
+            self._schedule.reset()
+        self._detector = FailureDetector(
+            self._topology, self._detector_config, self._config.tick_ms
+        )
 
     def step(self) -> TickResult:
-        """Advance exactly one tick and return what happened during it."""
         tick = self._tick
         time_s = tick * self._config.tick_ms / _MS_PER_SECOND
+        events: list[Event] = []
 
-        active = [flow for flow in self._flows if flow.is_active_at(time_s)]
-        allocation = allocate(self._topology, active, self._routing)
-        samples = tuple(self._sample(tick, flow, allocation) for flow in active)
+        truth = self._topology
+        if self._schedule is not None:
+            truth, fired = self._schedule.apply(tick, time_s)
+            for event in fired:
+                events.append(
+                    Event(
+                        tick,
+                        EventType.FAILURE_INJECTED,
+                        {"kind": str(event.kind), "targets": list(event.targets)},
+                    )
+                )
+
+        view = self._detector.observe(tick, truth)
+        for kind, element_id in self._detector.detected_this_tick:
+            events.append(
+                Event(tick, EventType.FAILURE_DETECTED, {"element": element_id, "kind": kind})
+            )
+
+        control_seconds: float | None = None
+        if view.changed or not self._routing:
+            started = perf_counter()
+            routing = self._algorithm.recompute(view, self._flows, self._routing)
+            control_seconds = perf_counter() - started
+            self._control_seconds += control_seconds
+            self._control_calls += 1
+            if self._config.validate_each_recompute:
+                validate_routing(view.topology, self._flows, routing)
+            changed_routes = self._changed_routes(routing)
+            self._routing = routing
+            events.extend(self._algorithm.drain_events())
+            self._stable_ticks = 0 if changed_routes else self._stable_ticks + 1
+        else:
+            self._stable_ticks += 1
+            if self._stable_ticks == 3:
+                events.append(Event(tick, EventType.RECONVERGED, {}))
+
+        scale = self._schedule.demand_scale if self._schedule is not None else 1.0
+        active = [
+            replace(flow, demand_mbps=flow.demand_mbps * scale) if scale != 1.0 else flow
+            for flow in self._flows
+            if flow.is_active_at(time_s)
+        ]
+        allocation = allocate(truth, active, self._routing)
+        samples = tuple(self._sample(tick, flow, allocation, truth) for flow in active)
+
+        if self._schedule is not None:
+            for link_id in self._schedule.observe_utilisation(tick, truth, allocation.link_load):
+                events.append(Event(tick, EventType.CASCADE_FAILURE, {"link": link_id}))
 
         self._tick += 1
-        return TickResult(tick=tick, time_s=time_s, samples=samples, link_load=allocation.link_load)
+        return TickResult(
+            tick=tick,
+            time_s=time_s,
+            samples=samples,
+            link_load=allocation.link_load,
+            events=tuple(events),
+            control_seconds=control_seconds,
+        )
+
+    def _changed_routes(self, routing: RoutingState) -> bool:
+        if set(routing) != set(self._routing):
+            return True
+        return any(
+            placement_links(routing[flow_id]) != placement_links(self._routing[flow_id])
+            for flow_id in routing
+        )
 
     def run(self, ticks: int) -> Iterator[TickResult]:
-        """Yield `ticks` consecutive results, lazily.
-
-        A generator rather than a list because a 500-node, 20,000-tick run produces
-        millions of samples; materialising them all before the caller can fold them into a
-        summary or stream them to Parquet is how a laptop-scale tool runs out of memory
-        (non-functional requirement N1). Callers that genuinely want them all can call
-        `list()`, having decided to.
-        """
         if isinstance(ticks, bool) or not isinstance(ticks, int):
             raise ValidationError(f"Simulation.run: ticks must be an int, got {ticks!r}")
         if ticks < 0:
@@ -176,27 +249,36 @@ class Simulation:
             yield self.step()
 
     def measure(self, ticks: int) -> RunSummary:
-        """Run `ticks` ticks headless and return the run summary (requirements F10, F11)."""
         accumulator = MetricsAccumulator(self._config.tick_seconds)
         accumulator.add_all(self.run(ticks))
-        return accumulator.summary()
+        return accumulator.summary(
+            control_seconds=self._control_seconds,
+            control_calls=self._control_calls,
+            cascade_depth=self._schedule.cascade_depth if self._schedule is not None else 0,
+        )
 
-    def _sample(self, tick: int, flow: Flow, allocation: Allocation) -> FlowSample:
+    def _sample(self, tick: int, flow: Flow, allocation: Allocation, truth: Topology) -> FlowSample:
         allocated = allocation.rates[flow.id]
         blackholed = flow.id in allocation.blackholed
-        route = None if blackholed else self._routing.get(flow.id)
+        placement = None if blackholed else self._routing.get(flow.id)
 
-        intrinsic = 0.0 if route is None else path_intrinsic_loss(self._topology, route)
-        delivered = allocated * (1.0 - intrinsic)
+        delivered = 0.0
+        weighted_latency = 0.0
+        if placement is not None:
+            for index, (route, _) in enumerate(placement_paths(placement)):
+                granted = allocation.path_rates.get((flow.id, index), 0.0)
+                if granted <= 0.0:
+                    continue
+                survived = granted * (1.0 - path_intrinsic_loss(truth, route))
+                delivered += survived
+                weighted_latency += survived * self._latency_ms(route, allocation.link_load, truth)
+        intrinsic = _clamp_fraction(1.0 - (delivered / allocated)) if allocated > 0.0 else 0.0
         congestive = (
-            (flow.demand_mbps - allocated) / flow.demand_mbps if flow.demand_mbps > 0.0 else 0.0
+            _clamp_fraction((flow.demand_mbps - allocated) / flow.demand_mbps)
+            if flow.demand_mbps > 0.0
+            else 0.0
         )
-        latency = (
-            self._latency_ms(route, allocation.link_load)
-            if route is not None and delivered > 0.0
-            else None
-        )
-
+        latency = (weighted_latency / delivered) if delivered > 0.0 else None
         return FlowSample(
             tick=tick,
             flow_id=flow.id,
@@ -210,11 +292,12 @@ class Simulation:
             blackholed=blackholed,
         )
 
-    def _latency_ms(self, route: Route, link_load: Mapping[LinkId, float]) -> float:
-        """`Σ_path (prop_delay + queue_delay) + Σ_path node processing_delay`."""
+    def _latency_ms(
+        self, route: Route, link_load: Mapping[LinkId, float], truth: Topology
+    ) -> float:
         total = 0.0
         for link_id in route.links:
-            link = self._topology.link(link_id)
+            link = truth.link(link_id)
             total += link.prop_delay_ms + queue_delay_ms(
                 link.effective_capacity_mbps,
                 link_load.get(link_id, 0.0),
@@ -222,12 +305,11 @@ class Simulation:
                 maximum_ms=self._config.max_queue_delay_ms,
             )
         for node_id in route.nodes:
-            total += self._topology.node(node_id).processing_delay_ms
+            total += truth.node(node_id).processing_delay_ms
         return total
 
 
 def summarise(results: Sequence[TickResult], tick_seconds: float) -> RunSummary:
-    """Fold already-collected results into a summary, for callers that kept them."""
     accumulator = MetricsAccumulator(tick_seconds)
     accumulator.add_all(results)
     return accumulator.summary()

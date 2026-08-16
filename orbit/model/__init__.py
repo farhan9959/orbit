@@ -14,12 +14,22 @@ from orbit.model.network import (
     NodeState,
     Topology,
 )
-from orbit.model.routing import Route, RoutingState, validate_routing
+from orbit.model.routing import (
+    PathSet,
+    Placement,
+    Route,
+    RoutingState,
+    placement_links,
+    placement_paths,
+    validate_routing,
+)
 from orbit.model.traffic import Flow, FlowId, Priority, validate_flows
+from orbit.model.view import GraphView
 
 __all__ = [
     "Flow",
     "FlowId",
+    "GraphView",
     "Link",
     "LinkId",
     "LinkState",
@@ -27,10 +37,14 @@ __all__ = [
     "NodeId",
     "NodeKind",
     "NodeState",
+    "PathSet",
+    "Placement",
     "Priority",
     "Route",
     "RoutingState",
     "Topology",
+    "placement_links",
+    "placement_paths",
     "validate_flows",
     "validate_routing",
 ]

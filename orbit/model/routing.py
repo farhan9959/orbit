@@ -28,6 +28,7 @@ semantics, so a mapping is the whole type.
 from __future__ import annotations
 
 import itertools
+import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
@@ -91,8 +92,70 @@ class Route:
         return cls(links=tuple(link_ids), nodes=tuple(nodes))
 
 
-RoutingState = Mapping[FlowId, Route]
-"""Installed routes by flow id. A flow with no entry is unrouted, i.e. BLACKHOLED."""
+@dataclass(frozen=True, slots=True)
+class PathSet:
+    """Several routes carrying one flow, with the share of demand each takes.
+
+    ECMP splits a demand across equal-cost paths (RFC 2992). The shares are explicit rather
+    than assumed equal so that a weighted variant needs no new type.
+    """
+
+    routes: tuple[Route, ...]
+    shares: tuple[float, ...]
+
+    def __post_init__(self) -> None:
+        if not self.routes:
+            raise ValidationError("PathSet: must contain at least one route")
+        if len(self.routes) != len(self.shares):
+            raise ValidationError(
+                f"PathSet: {len(self.routes)} routes but {len(self.shares)} shares"
+            )
+        if any(share < 0.0 for share in self.shares):
+            raise ValidationError(f"PathSet: shares must be non-negative, got {self.shares!r}")
+        total = math.fsum(self.shares)
+        if abs(total - 1.0) > 1e-9:
+            raise ValidationError(f"PathSet: shares must sum to 1.0, got {total!r}")
+        first, last = self.routes[0].src, self.routes[0].dst
+        for route in self.routes:
+            if route.src != first or route.dst != last:
+                raise ValidationError(
+                    f"PathSet: every route must run {first!r}->{last!r}, "
+                    f"got {route.src!r}->{route.dst!r}"
+                )
+
+    @property
+    def src(self) -> NodeId:
+        return self.routes[0].src
+
+    @property
+    def dst(self) -> NodeId:
+        return self.routes[0].dst
+
+    @classmethod
+    def equal_split(cls, routes: Sequence[Route]) -> PathSet:
+        if not routes:
+            raise ValidationError("PathSet.equal_split: routes must not be empty")
+        share = 1.0 / len(routes)
+        shares = [share] * len(routes)
+        shares[-1] = 1.0 - share * (len(routes) - 1)
+        return cls(tuple(routes), tuple(shares))
+
+
+Placement = Route | PathSet
+RoutingState = Mapping[FlowId, Placement]
+"""Installed placement by flow id. A flow with no entry is unrouted, i.e. BLACKHOLED."""
+
+
+def placement_paths(placement: Placement) -> tuple[tuple[Route, float], ...]:
+    if isinstance(placement, Route):
+        return ((placement, 1.0),)
+    return tuple(zip(placement.routes, placement.shares, strict=True))
+
+
+def placement_links(placement: Placement) -> tuple[LinkId, ...]:
+    if isinstance(placement, Route):
+        return placement.links
+    return tuple(link for route in placement.routes for link in route.links)
 
 
 def validate_routing(topology: Topology, flows: Iterable[Flow], routing: RoutingState) -> None:
@@ -108,22 +171,22 @@ def validate_routing(topology: Topology, flows: Iterable[Flow], routing: Routing
         flow = by_id.get(flow_id)
         if flow is None:
             raise ValidationError(f"validate_routing: route installed for unknown flow {flow_id!r}")
-        route = routing[flow_id]
-        if not isinstance(route, Route):
+        placement = routing[flow_id]
+        if not isinstance(placement, (Route, PathSet)):
             raise ValidationError(
-                f"validate_routing: expected Route for flow {flow_id!r}, got {route!r}"
+                f"validate_routing: expected Route or PathSet for flow {flow_id!r}, "
+                f"got {placement!r}"
             )
-        # Rebuilding re-checks link existence and contiguity against *this* topology, so a
-        # route computed on a different graph cannot be installed unnoticed.
-        rebuilt = Route.build(topology, route.links)
-        if rebuilt != route:
-            raise ValidationError(
-                f"validate_routing: route for flow {flow_id!r} does not match this "
-                f"topology (expected nodes {rebuilt.nodes!r}, got {route.nodes!r})"
-            )
-        if route.src != flow.src or route.dst != flow.dst:
-            raise ValidationError(
-                f"validate_routing: route for flow {flow_id!r} runs "
-                f"{route.src!r}->{route.dst!r} but the flow demands "
-                f"{flow.src!r}->{flow.dst!r}"
-            )
+        for route, _ in placement_paths(placement):
+            rebuilt = Route.build(topology, route.links)
+            if rebuilt != route:
+                raise ValidationError(
+                    f"validate_routing: route for flow {flow_id!r} does not match this "
+                    f"topology (expected nodes {rebuilt.nodes!r}, got {route.nodes!r})"
+                )
+            if route.src != flow.src or route.dst != flow.dst:
+                raise ValidationError(
+                    f"validate_routing: route for flow {flow_id!r} runs "
+                    f"{route.src!r}->{route.dst!r} but the flow demands "
+                    f"{flow.src!r}->{flow.dst!r}"
+                )

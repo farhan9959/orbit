@@ -157,7 +157,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 from orbit.errors import ValidationError
-from orbit.model import Flow, FlowId, LinkId, Priority, RoutingState, Topology
+from orbit.model import Flow, FlowId, LinkId, Priority, RoutingState, Topology, placement_paths
 
 _EPS = 1e-9
 """Relative tolerance for 'is this link full' and 'is this flow satisfied'.
@@ -189,6 +189,9 @@ class Allocation:
     blackholed: frozenset[FlowId]
     """Flows with no live route. Distinct from flows starved to 0 by strict priority."""
 
+    path_rates: Mapping[tuple[FlowId, int], float] = MappingProxyType({})
+    """Rate granted to each (flow, path index). Single-path flows have one entry, index 0."""
+
     def load_on(self, link_id: LinkId) -> float:
         return self.link_load.get(link_id, 0.0)
 
@@ -211,30 +214,58 @@ def allocate(topology: Topology, flows: Iterable[Flow], routing: RoutingState) -
         rates[flow.id] = 0.0
 
     blackholed: set[FlowId] = set()
-    by_class: dict[Priority, list[tuple[Flow, tuple[LinkId, ...]]]] = {}
+    by_class: dict[Priority, list[_Entry]] = {}
     for flow in ordered:
-        route = routing.get(flow.id)
-        if route is None or not all(topology.is_usable(link_id) for link_id in route.links):
+        placement = routing.get(flow.id)
+        if placement is None:
             blackholed.add(flow.id)
             continue
-        by_class.setdefault(flow.priority, []).append((flow, route.links))
+        live = [
+            (route, share)
+            for route, share in placement_paths(placement)
+            if share > 0.0 and all(topology.is_usable(link_id) for link_id in route.links)
+        ]
+        if not live:
+            blackholed.add(flow.id)
+            continue
+        total_share = sum(share for _, share in live)
+        for index, (route, share) in enumerate(live):
+            by_class.setdefault(flow.priority, []).append(
+                _Entry(
+                    flow=flow,
+                    links=route.links,
+                    demand_mbps=flow.demand_mbps * share / total_share,
+                    index=index,
+                )
+            )
 
     link_load: dict[LinkId, float] = {}
+    path_rates: dict[tuple[FlowId, int], float] = {}
     for priority in sorted(by_class, reverse=True):
-        _progressive_fill(topology, by_class[priority], rates, link_load)
+        _progressive_fill(topology, by_class[priority], rates, link_load, path_rates)
 
     return Allocation(
         rates=MappingProxyType(rates),
         link_load=MappingProxyType(link_load),
         blackholed=frozenset(blackholed),
+        path_rates=MappingProxyType(path_rates),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class _Entry:
+    flow: Flow
+    links: tuple[LinkId, ...]
+    demand_mbps: float
+    index: int
 
 
 def _progressive_fill(
     topology: Topology,
-    entries: Sequence[tuple[Flow, tuple[LinkId, ...]]],
+    entries: Sequence[_Entry],
     rates: dict[FlowId, float],
     link_load: dict[LinkId, float],
+    path_rates: dict[tuple[FlowId, int], float],
 ) -> None:
     """Max-min fair fill of one priority class, over the capacity left by higher classes.
 
@@ -244,17 +275,20 @@ def _progressive_fill(
     """
     capacity = {
         link_id: topology.link(link_id).effective_capacity_mbps
-        for _, links in entries
-        for link_id in links
+        for entry in entries
+        for link_id in entry.links
     }
     # Zero-demand flows are excluded rather than fixed at zero inside the loop: including
     # them would make t_demand zero on the first iteration and stall every other flow.
-    unfixed = [(flow, links) for flow, links in entries if flow.demand_mbps > 0.0]
+    unfixed = [entry for entry in entries if entry.demand_mbps > 0.0]
+    granted = path_rates
+    for entry in entries:
+        granted[(entry.flow.id, entry.index)] = 0.0
 
     while unfixed:
         crossings: dict[LinkId, int] = {}
-        for _, links in unfixed:
-            for link_id in links:
+        for entry in unfixed:
+            for link_id in entry.links:
                 crossings[link_id] = crossings.get(link_id, 0) + 1
 
         # The water level rises until either a link fills or a flow is satisfied.
@@ -262,24 +296,28 @@ def _progressive_fill(
             max(0.0, capacity[link_id] - link_load.get(link_id, 0.0)) / count
             for link_id, count in crossings.items()
         )
-        t_demand = min(flow.demand_mbps - rates[flow.id] for flow, _ in unfixed)
+        t_demand = min(
+            entry.demand_mbps - granted[(entry.flow.id, entry.index)] for entry in unfixed
+        )
         step = min(t_link, t_demand)
 
         if step > 0.0:
-            for flow, links in unfixed:
-                rates[flow.id] += step
-                for link_id in links:
+            for entry in unfixed:
+                granted[(entry.flow.id, entry.index)] += step
+                rates[entry.flow.id] += step
+                for link_id in entry.links:
                     link_load[link_id] = link_load.get(link_id, 0.0) + step
 
-        remaining: list[tuple[Flow, tuple[LinkId, ...]]] = []
-        for flow, links in unfixed:
-            satisfied = _is_exhausted(flow.demand_mbps - rates[flow.id], flow.demand_mbps)
+        remaining: list[_Entry] = []
+        for entry in unfixed:
+            key = (entry.flow.id, entry.index)
+            satisfied = _is_exhausted(entry.demand_mbps - granted[key], entry.demand_mbps)
             bottlenecked = any(
                 _is_exhausted(capacity[link_id] - link_load.get(link_id, 0.0), capacity[link_id])
-                for link_id in links
+                for link_id in entry.links
             )
             if not satisfied and not bottlenecked:
-                remaining.append((flow, links))
+                remaining.append(entry)
 
         if len(remaining) == len(unfixed):
             # Unreachable: the termination argument in the module docstring shows that the

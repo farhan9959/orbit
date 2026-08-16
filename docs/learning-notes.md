@@ -184,3 +184,84 @@ generated examples, so the two fairness invariants were nearly untested while th
 looked green. I instrumented the generator, fixed the bias, and added a test that asserts
 the contention rate, so it cannot quietly regress. A property suite that cannot fail is
 worse than none, because it reports confidence it has not earned."
+
+---
+
+## A1 (cont.) — Seed derivation and topology generators (`orbit/rng.py`, `orbit/generators/`)
+
+**WHAT.** `derive_seed(base_seed, name)` / `rng_for(base_seed, name)`, giving each
+stochastic subsystem its own independent reproducible stream; and the four synthetic
+topology families from requirement F2 — `grid`, `ring`, `waxman`, `barabasi_albert`.
+
+**WHY.**
+
+* *Why named streams instead of one global RNG.* Two reasons, and the second is the one
+  that matters. **Independence:** with a shared stream, adding one extra random draw to
+  the topology generator silently changes the traffic matrix and the failure times of
+  every subsequent run, so a refactor that should be invisible instead invalidates a
+  benchmark. **Pairing:** `05-methodology.md` B2 requires every algorithm in a cell to
+  face a bit-identical world, which is only true if the topology, traffic and failure
+  schedule are reproducible regardless of which algorithm is running and how many draws
+  that algorithm happens to make.
+* *Why BLAKE2b and not `hash()`.* Python salts `str` and `bytes` hashes with a per-process
+  random value unless `PYTHONHASHSEED` is set. `random.Random(hash(name))` is a
+  plausible-looking one-liner that silently produces a different stream on every
+  invocation, and nothing in the code's appearance reveals it. BLAKE2b is stdlib, stable
+  across processes and platforms, and the test suite proves both halves: one test asserts
+  `derive_seed` is identical across two subprocesses run with different `PYTHONHASHSEED`
+  values, and another asserts that raw `hash()` *differs* under the same conditions — so
+  the hazard is documented executably rather than as a comment nobody rechecks.
+* *Why four families.* They differ in exactly the way the failure sweep needs. A grid is
+  regular and richly connected, so reconvergence looks its best. A ring is the pessimistic
+  case: every node has degree two, so any second cable cut partitions the network.
+  Barabási–Albert has hubs, which is what makes a *targeted* failure devastating there and
+  unremarkable on a grid. Waxman is geometric, and the only family with distance-dependent
+  latency, which is why it carries the scale and load sweeps.
+* *Why a cable is two directed links sharing an SRLG.* `Link` is directed, so an undirected
+  adjacency becomes a forward and reverse pair tagged `cable:<a>-<b>`. A conduit cut takes
+  the tag, therefore both directions. Without this, a "backup path" could be computed that
+  shares physical fate with its primary — the exact failure mode that defeats real
+  protection schemes, and one ORBIT is meant to demonstrate.
+
+**HOW.** Each generator produces a set of undirected `(a, b)` index pairs, and one shared
+`_build` turns them into nodes and directed link pairs. Waxman joins each pair with
+probability `alpha·exp(-d/(beta·L))` over uniformly placed points; Barabási–Albert uses the
+standard endpoint-pool trick, where a node appears in the pool once per incident edge
+endpoint, so a uniform draw from the pool is a degree-proportional draw over nodes — O(1)
+per attachment instead of a scan over the degree table.
+
+Two decisions worth defending:
+
+* **Node ids are zero-padded** (`n000`). Everything in this project iterates over sorted
+  ids, and unpadded ids sort `n10` before `n2`. That is harmless for determinism but makes
+  every event log and debugging session harder to read than it needs to be.
+* **Connectivity is repaired deterministically, not by retrying with a new seed.** Waxman
+  at low `alpha` routinely fragments. Components are chained in ascending order by their
+  smallest member. The specific choice is arbitrary; what matters is that the repair
+  consumes *no random draws*, because a repair that sampled would shift every subsequent
+  random decision and make the topology depend on how fragmented it happened to be.
+
+**TRADEOFFS.**
+
+| Decision | Gained | Given up |
+|---|---|---|
+| Guaranteed-connected output | Benchmarks measure recovery, not pre-existing partitions | The generator can't produce a naturally-partitioned topology; a partition must be *injected*, which is where it belongs |
+| Uniform capacity per topology | Load is a scenario parameter, not a topology one | No heterogeneous-capacity families yet |
+| Waxman coordinates discarded | No speculative field on `Node` | F5 (stable visual layout) relies on regenerating from the seed, which reproduces the coordinates exactly |
+| Deterministic connectivity repair | Repair can't perturb later draws | Repaired edges are slightly unnatural for the family |
+| Spec-file loading not implemented | No premature YAML/Pydantic dependency | The other half of F2 is still open |
+
+**HOW I EXPLAIN IT IN AN INTERVIEW.** "The generators are ordinary graph algorithms; the
+part worth talking about is the seeding. Every stochastic subsystem gets its own stream
+derived from the run's base seed and a name, rather than sharing one global generator. That
+sounds fussy until you notice the failure mode it prevents: with a shared stream, adding a
+single random draw to the topology generator changes the traffic and the failure schedule
+of every run afterwards, so a refactor silently invalidates results you have already
+published.
+
+The derivation uses BLAKE2b rather than Python's `hash()`, because `hash()` on strings is
+salted per process — `random.Random(hash(name))` looks completely reasonable and quietly
+destroys reproducibility. I have a test that runs the derivation in two subprocesses with
+different `PYTHONHASHSEED` values and asserts the seeds match, and a companion test
+asserting that raw `hash()` does *not* match, so the reason the code is written that way is
+executable rather than a comment somebody deletes in a year."

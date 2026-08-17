@@ -1,0 +1,28 @@
+{
+  "git_sha": "f2e35e2277a078d881b50ad4f99fbf6b6df2df22",
+  "dirty": false,
+  "python": "3.14.6",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "processor": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+  "packages": {
+    "numpy": "2.5.2",
+    "scipy": "1.18.0"
+  },
+  "experiment": "a8-dual-control",
+  "trials": 30,
+  "algorithms": [
+    "spf-static",
+    "spf-reconverge",
+    "ecmp",
+    "cspf",
+    "orbit"
+  ],
+  "scenarios": [
+    "waxman-n60-load0.7-critical_link-centralised",
+    "waxman-n60-load0.7-critical_link-distributed",
+    "waxman-n60-load0.7-random_node_30-centralised",
+    "waxman-n60-load0.7-random_node_30-distributed"
+  ],
+  "started_at": "2026-08-17T05:34:11",
+  "wall_clock_s": 60.298228800005745
+}

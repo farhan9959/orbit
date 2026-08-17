@@ -14,6 +14,7 @@ check the implementation against the intent.
 | `a8-ablation` | 2 families x 2 failures, each ORBIT mechanism disabled | 7 | 30 | 840 |
 | `a8-cascade` | 4 families, cascading failure | 5 | 30 | 600 |
 | `a9-cascade-sweep` | 7 thresholds x 6 dwells x 2 loads x 2 families | 5 | 30 | 25,200 |
+| `a9-ceiling` | 2 families x 3 cascade thresholds, ceiling variants | 10 | 30 | 1,800 |
 
 Size is fixed at 60 nodes and 150 flows, 150 ticks (15 s of simulated time) with a failure
 injected at t = 2 s. **Only these sizes are claimed.** The requirements list 10-500 nodes;

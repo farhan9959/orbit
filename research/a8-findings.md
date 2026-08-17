@@ -283,10 +283,91 @@ permissive - more headroom means more room for relocated traffic to do damage be
 fails.
 
 **What it implies for the design:** ORBIT already carries a utilisation term in its placement
-cost and evidently does not weight it aggressively enough to avoid this. A controller that
-refused to place traffic above a ceiling strictly below theta is the obvious next experiment,
-and it has not been run. Whether such a controller would beat static SPF on delivery - rather
-than merely on cascade depth - is unknown.
+cost and does not weight it aggressively enough to avoid this. The next section runs that
+experiment.
+
+---
+
+## Utilisation ceiling - the cascade is avoidable, and two separate things cause it
+
+`a9-ceiling`, **1,800 runs**, manifest `dirty: false`. Waxman and scale-free, offered load
+0.9, cascade thresholds {0.90, 0.95, 0.98}, 30 paired trials, 10 algorithms.
+
+`OrbitConfig.utilisation_ceiling` refuses to place a flow if doing so would leave a link
+above the ceiling, and the best-effort fallback respects the ceiling too. The controller
+therefore declines traffic it could physically carry.
+
+Median over all cells:
+
+| Algorithm | cascade depth | overall PDR | CRITICAL | HIGH | LOW |
+|---|---|---|---|---|---|
+| spf-static | 48 | 0.119 | 0.120 | 0.121 | **0.114** |
+| cspf | 120 | 0.057 | 0.061 | 0.052 | 0.046 |
+| orbit | 117 | 0.057 | 0.075 | 0.059 | 0.043 |
+| orbit-no-fallback | 65 | 0.295 | 0.649 | 0.389 | 0.121 |
+| orbit-ceiling-1.0 | 49.5 | 0.331 | 0.636 | 0.508 | **0.125** |
+| **orbit-ceiling-0.95** | **0** | **0.445** | 0.903 | 0.725 | 0.124 |
+| orbit-ceiling-0.9 | **0** | 0.434 | **0.932** | **0.747** | 0.096 |
+| orbit-ceiling-0.8 | **0** | 0.386 | 0.907 | 0.684 | 0.071 |
+| orbit-ceiling-0.7 | **0** | 0.332 | 0.727 | 0.586 | 0.087 |
+| orbit-ceiling-0.6 | **0** | 0.271 | 0.501 | 0.447 | 0.068 |
+
+A ceiling at or below 0.95 **eliminates the cascade entirely** - depth 0 in every cell at
+every threshold tested - and delivers 3.7x static SPF's traffic and 7.8x plain ORBIT's.
+Paired, `orbit-ceiling-0.95` wins overall PDR in 6 of 6 cells against every control, all
+large effect, Holm-adjusted p < 0.05:
+
+| vs | median difference |
+|---|---|
+| spf-static | **+0.325** |
+| orbit | **+0.395** |
+| orbit-no-fallback | +0.125 |
+| orbit-ceiling-1.0 | +0.088 |
+
+### The effect decomposes into two causes, and the smaller one is the ceiling
+
+The controls matter more than the headline. `orbit-no-fallback` has **no ceiling at all** —
+it is plain ORBIT with the best-effort fallback disabled — and it already reaches 0.295 PDR
+against plain ORBIT's 0.057. That is roughly **two thirds of the total improvement, from
+removing the fallback alone.**
+
+| Step | overall PDR | share of the gain |
+|---|---|---|
+| orbit (baseline) | 0.057 | — |
+| + disable best-effort fallback | 0.295 | **61%** |
+| + ceiling at 1.0 (capacity constraint, no headroom) | 0.331 | 9% |
+| + ceiling at 0.95 (genuine headroom) | 0.445 | 29% |
+
+So the honest statement is **not** "a utilisation ceiling fixes cascades". It is:
+
+1. **The best-effort fallback is actively harmful under cascading overload.** It places flows
+   that fit nowhere onto already-loaded paths, pushing links over theta and propagating the
+   cascade. This is the same fallback added in `fc415d9` to remove an unfair asymmetry
+   against ORBIT — correct in the non-cascade case, harmful here. A mechanism can be right
+   for one regime and wrong for another, and this project now has a measured example.
+2. **Genuine headroom is what drives cascade depth to zero.** Ceiling 1.0 still suffers depth
+   49.5; ceiling 0.95 suffers 0. Only refusing to fill a link *completely* stops the
+   propagation.
+3. **The optimum is not the most conservative setting.** Delivery peaks near 0.95 and falls
+   monotonically below it — 0.271 at ceiling 0.6. Too much caution declines more traffic than
+   the cascade would have destroyed.
+
+### What this does and does not license
+
+**Supported:** in this model, a controller that reserves ~5% headroom on every link avoids
+the cascade entirely and delivers substantially more traffic than any algorithm tested,
+including static SPF. The gain is attributable — roughly 60% to declining unplaceable flows
+rather than forcing them, and 40% to the headroom itself.
+
+**Not supported, and not claimed:** any real-network claim. This inherits every limitation of
+the cascade rule it is tuned against, and a ceiling tuned to a threshold the operator does not
+know is not a deployable design. The result is evidence that *the model's* cascade is
+avoidable, and a demonstration that admission control beats forced placement under overload.
+
+**Not tested:** whether the ceiling harms the non-cascade scenarios where ORBIT's original
+advantage lives. It almost certainly costs delivery there, since it declines traffic the
+network could carry, and it is not enabled by default for that reason. Measuring that
+trade-off across the headline grid is the next experiment and has not been run.
 
 ---
 
@@ -330,7 +411,8 @@ Every clause is measured, and the cost clause is stated as prominently as the be
 ## What must change before any of this is published
 
 1. **The contribution claim must be rewritten.** The ablation shows M1, M3 and M4 are inert.
-   ORBIT is one mechanism, not four.
+   ORBIT is one mechanism, not four. The utilisation ceiling is a fifth candidate mechanism
+   with a measured effect, but it is only measured under cascade and is off by default.
 2. **The cascade result is robust to its parameters but rests on one model form.** The sweep
    (25,200 runs, 168 cells) rules out threshold and dwell sensitivity. It does not rule out
    sensitivity to the shape of the cascade rule itself, and no real-network claim may be made

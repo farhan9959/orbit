@@ -1,0 +1,35 @@
+{
+  "git_sha": "a0cdc7af2f5961310347ea72ad3adac2792fd568",
+  "dirty": false,
+  "python": "3.14.6",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "processor": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+  "packages": {
+    "numpy": "2.5.2",
+    "scipy": "1.18.0"
+  },
+  "experiment": "a9-ceiling",
+  "trials": 30,
+  "algorithms": [
+    "spf-static",
+    "cspf",
+    "orbit",
+    "orbit-no-fallback",
+    "orbit-ceiling-1.0",
+    "orbit-ceiling-0.95",
+    "orbit-ceiling-0.9",
+    "orbit-ceiling-0.8",
+    "orbit-ceiling-0.7",
+    "orbit-ceiling-0.6"
+  ],
+  "scenarios": [
+    "waxman-n60-load0.9-cascading-centralised-th0.9-dw3",
+    "waxman-n60-load0.9-cascading-centralised-th0.95-dw3",
+    "waxman-n60-load0.9-cascading-centralised",
+    "scale_free-n60-load0.9-cascading-centralised-th0.9-dw3",
+    "scale_free-n60-load0.9-cascading-centralised-th0.95-dw3",
+    "scale_free-n60-load0.9-cascading-centralised"
+  ],
+  "started_at": "2026-08-17T17:14:36",
+  "wall_clock_s": 300.0962950999965
+}

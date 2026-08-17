@@ -116,3 +116,28 @@ A8_CASCADE = ExperimentSpec(
     ),
     trials=30,
 )
+
+
+CASCADE_THRESHOLDS = (0.75, 0.80, 0.85, 0.90, 0.95, 0.98, 1.00)
+CASCADE_DWELLS = (1, 3, 5, 10, 20, 40)
+
+A9_CASCADE_SWEEP = ExperimentSpec(
+    name="a9-cascade-sweep",
+    scenarios=tuple(
+        ScenarioSpec(
+            family=family,
+            nodes=60,
+            flows=150,
+            offered_load=load,
+            ticks=150,
+            failure=FailureScenario.CASCADING,
+            cascade_threshold=threshold,
+            cascade_dwell_ticks=dwell,
+        )
+        for family in (TopologyFamily.WAXMAN, TopologyFamily.SCALE_FREE)
+        for load in (0.7, 0.9)
+        for threshold in CASCADE_THRESHOLDS
+        for dwell in CASCADE_DWELLS
+    ),
+    trials=30,
+)

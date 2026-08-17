@@ -243,3 +243,67 @@ def test_censoring_report_counts_partitioned_runs() -> None:
     report = censoring_report(frame)
     assert report.loc[0, "censored"] == 1
     assert report.loc[0, "partitioned_fraction"] == pytest.approx(0.5)
+
+
+def test_cascade_parameters_do_not_change_the_world_being_measured() -> None:
+    """A sweep over the cascade rule must vary only the rule.
+
+    If the threshold fed the seed, every cell would face a different topology and traffic
+    matrix, and differences across the grid would be unattributable.
+    """
+    base = ScenarioSpec(failure=FailureScenario.CASCADING)
+    swept = ScenarioSpec(
+        failure=FailureScenario.CASCADING, cascade_threshold=0.75, cascade_dwell_ticks=40
+    )
+    assert base.seed_for(0) == swept.seed_for(0)
+    assert base.seed_key == swept.seed_key
+    assert base.id != swept.id
+
+    seed = base.seed_for(0)
+    assert list(build_topology(base, seed).links) == list(build_topology(swept, seed).links)
+    assert [f.demand_mbps for f in build_traffic(base, build_topology(base, seed), seed)] == [
+        f.demand_mbps for f in build_traffic(swept, build_topology(swept, seed), seed)
+    ]
+
+
+def test_the_legacy_scenario_id_is_unchanged_so_old_seeds_still_reproduce() -> None:
+    spec = ScenarioSpec(failure=FailureScenario.CASCADING)
+    assert spec.id == "waxman-n100-load0.7-cascading-centralised"
+    assert spec.seed_key == spec.id
+
+
+def test_the_cascade_rule_actually_reaches_the_schedule() -> None:
+    strict = ScenarioSpec(
+        family=TopologyFamily.WAXMAN,
+        nodes=20,
+        flows=20,
+        ticks=20,
+        failure=FailureScenario.CASCADING,
+        cascade_threshold=1.0,
+        cascade_dwell_ticks=40,
+    )
+    loose = ScenarioSpec(
+        family=TopologyFamily.WAXMAN,
+        nodes=20,
+        flows=20,
+        ticks=20,
+        failure=FailureScenario.CASCADING,
+        cascade_threshold=0.75,
+        cascade_dwell_ticks=1,
+    )
+    seed = strict.seed_for(0)
+    topology = build_topology(strict, seed)
+    strict_rule = build_schedule(strict, topology, seed)._cascade
+    loose_rule = build_schedule(loose, topology, seed)._cascade
+    assert strict_rule.utilisation_threshold == 1.0
+    assert strict_rule.dwell_ticks == 40
+    assert loose_rule.utilisation_threshold == 0.75
+    assert loose_rule.dwell_ticks == 1
+
+
+@pytest.mark.parametrize(
+    "kwargs", [{"cascade_threshold": 0.0}, {"cascade_threshold": 1.5}, {"cascade_dwell_ticks": 0}]
+)
+def test_cascade_parameters_are_validated(kwargs: dict) -> None:
+    with pytest.raises(ValidationError):
+        ScenarioSpec(**kwargs)

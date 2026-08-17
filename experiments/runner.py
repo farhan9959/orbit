@@ -107,6 +107,10 @@ class RunRecord:
     reroutes: int
     preemptions: int
     cascade_depth: int
+    cascade_threshold: float
+    cascade_dwell_ticks: int
+    cascade_saturated: bool
+    total_links: int
     time_to_converge_s: float | None
     peak_restore_critical: float | None
     optimality_gap: float | None
@@ -176,6 +180,10 @@ def run_one(
         reroutes=summary.reroutes,
         preemptions=summary.preemptions,
         cascade_depth=summary.cascade_depth,
+        cascade_threshold=spec.cascade_threshold,
+        cascade_dwell_ticks=spec.cascade_dwell_ticks,
+        cascade_saturated=summary.cascade_depth >= spec.cascade_max_failures,
+        total_links=len(topology.links),
         time_to_converge_s=summary.time_to_converge_s,
         peak_restore_critical=summary.peak_restore_fraction.get(Priority.CRITICAL),
         optimality_gap=None,

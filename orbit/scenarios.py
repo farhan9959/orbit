@@ -65,6 +65,9 @@ class ScenarioSpec:
     ticks: int = 200
     control_mode: ControlMode = ControlMode.CENTRALISED
     link_capacity_mbps: float = 100.0
+    cascade_threshold: float = 0.98
+    cascade_dwell_ticks: int = 3
+    cascade_max_failures: int = 10_000
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "family", TopologyFamily(self.family))
@@ -78,16 +81,37 @@ class ScenarioSpec:
             raise ValidationError(f"ScenarioSpec: ticks must be in (0, {MAX_TICKS}]")
         if not 0.0 < self.offered_load <= 5.0:
             raise ValidationError("ScenarioSpec: offered_load must be in (0, 5]")
+        if not 0.0 < self.cascade_threshold <= 1.0:
+            raise ValidationError("ScenarioSpec: cascade_threshold must be in (0, 1]")
+        if self.cascade_dwell_ticks < 1:
+            raise ValidationError("ScenarioSpec: cascade_dwell_ticks must be >= 1")
 
     @property
-    def id(self) -> str:
+    def seed_key(self) -> str:
+        """The world identity: topology, traffic and injected failure.
+
+        Cascade-rule parameters are deliberately excluded. A parameter sweep over the
+        cascade threshold must vary *only* the rule, so every cell has to face the
+        bit-identical topology, traffic matrix and initial failure. Folding the rule into
+        the seed would give each cell a different world and make the sweep uninterpretable.
+
+        This string is also the historical `id` format, so seeds from earlier experiments
+        are unchanged and their results remain reproducible.
+        """
         return (
             f"{self.family.value}-n{self.nodes}-load{self.offered_load}"
             f"-{self.failure.value}-{self.control_mode.value.lower()}"
         )
 
+    @property
+    def id(self) -> str:
+        base = self.seed_key
+        if (self.cascade_threshold, self.cascade_dwell_ticks) == (0.98, 3):
+            return base
+        return f"{base}-th{self.cascade_threshold}-dw{self.cascade_dwell_ticks}"
+
     def seed_for(self, trial: int) -> int:
-        return derive_seed(trial, self.id)
+        return derive_seed(trial, self.seed_key)
 
 
 def build_topology(spec: ScenarioSpec, seed: int) -> Topology:
@@ -190,7 +214,10 @@ def build_schedule(spec: ScenarioSpec, topology: Topology, seed: int) -> Failure
             FailureEvent(at, FailureKind.LINK_DOWN, highest_betweenness_links(topology, 2))
         )
         cascade = CascadeRule(
-            utilisation_threshold=0.98, dwell_ticks=3, max_failures=200, enabled=True
+            utilisation_threshold=spec.cascade_threshold,
+            dwell_ticks=spec.cascade_dwell_ticks,
+            max_failures=spec.cascade_max_failures,
+            enabled=True,
         )
 
     return FailureSchedule(topology, events, cascade)

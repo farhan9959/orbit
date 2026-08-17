@@ -11,6 +11,9 @@ check the implementation against the intent.
 | `a8-headline` | 4 topology families x 7 failure scenarios | 5 | 30 | 4,200 |
 | `a8-dual-control` | Waxman x 2 failures x 2 control modes | 5 | 30 | 600 |
 | `a8-load-sweep` | Waxman x 5 offered loads, critical-link failure | 5 | 30 | 750 |
+| `a8-ablation` | 2 families x 2 failures, each ORBIT mechanism disabled | 7 | 30 | 840 |
+| `a8-cascade` | 4 families, cascading failure | 5 | 30 | 600 |
+| `a9-cascade-sweep` | 7 thresholds x 6 dwells x 2 loads x 2 families | 5 | 30 | 25,200 |
 
 Size is fixed at 60 nodes and 150 flows, 150 ticks (15 s of simulated time) with a failure
 injected at t = 2 s. **Only these sizes are claimed.** The requirements list 10-500 nodes;
@@ -36,6 +39,20 @@ is `total_capacity / mean_hops`, and demand is sized against that.
 This matters: the first calibration used an arbitrary constant and produced PDR 1.000 at a
 nominal load of 0.7, which would have made every load-dependent claim meaningless. The
 recalibration is in `orbit/scenarios.py::build_traffic`.
+
+## Cascade parameter sweep
+
+`ScenarioSpec.seed_key` excludes the cascade-rule parameters while `ScenarioSpec.id` includes
+them. The seed therefore identifies the *world* - topology, traffic, injected failure - and the
+id identifies the *cell*. All 168 cells of the sweep share four seed keys, so a difference
+across the grid is attributable to the rule and to nothing else. Asserted by
+`test_cascade_parameters_do_not_change_the_world_being_measured`.
+
+Verdict criteria were written into `experiments/cascade_analysis.py` before the results were
+inspected: *robust* requires the ordering to hold in at least 90% of cells with the paired test
+significant in the majority and no significant reversals; *unsupported* if it fails in half or
+more. This is the pre-registration discipline of B3 rule 6 applied to an analysis rather than
+to a scenario list.
 
 ## Statistics
 

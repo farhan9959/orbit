@@ -205,15 +205,88 @@ capacity-aware placement reduced cascade depth. **It does not.** ORBIT's 76 agai
 The striking result is the opposite one: **static SPF suffers less than half the cascade
 depth of every recovering algorithm, and delivers the most traffic under cascade.** Because
 it never reroutes, it never dumps displaced traffic onto surviving links, so it never trips
-the overload threshold that propagates the cascade. Every algorithm that recovers makes the
-cascade worse, and the better it is at recovering, the more traffic it moves onto links that
-then fail.
+the overload threshold that propagates the cascade.
 
-That is a genuine and uncomfortable finding: **under cascading overload, recovery is
-actively harmful in this model.** It deserves its own investigation — in particular whether
-a recovery controller that respected a utilisation ceiling below the cascade threshold would
-avoid it. ORBIT has the machinery for that (the utilisation term in its cost) and evidently
-does not weight it aggressively enough.
+That single grid used one cascade rule (theta = 0.98, dwell = 3), so it could not distinguish
+a property of the mechanism from a property of that setting. The sweep below settles it.
+
+---
+
+## Cascade parameter sweep - the finding is robust, not an artefact
+
+`a9-cascade-sweep`, **25,200 runs**, manifest `dirty: false`. Utilisation threshold in
+{0.75, 0.80, 0.85, 0.90, 0.95, 0.98, 1.00} x dwell in {1, 3, 5, 10, 20, 40} ticks x offered
+load in {0.7, 0.9} x {waxman, scale_free} x 5 algorithms x 30 paired trials.
+**168 parameter cells.**
+
+The cascade parameters are deliberately excluded from the seed, so all 168 cells face a
+bit-identical topology, traffic matrix and initial failure - only the rule varies. Verified by
+`test_cascade_parameters_do_not_change_the_world_being_measured`. No run hit the failure cap
+(0 of 25,200 saturated), so the metric is unsaturated everywhere.
+
+**Verdict criteria were fixed before looking at the data** (`experiments/cascade_analysis.py`):
+robust required static SPF strictly lower in at least 90% of cells with the paired test
+significant in the majority, and no significant reversals.
+
+| Measure | Result |
+|---|---|
+| Cells where static SPF is strictly lower than **every** recovering algorithm | **168 / 168 (100%)** |
+| Cells with a significant reversal | **0** |
+| Cells where the majority of comparisons are significant after Holm | **168 / 168** |
+| Effect size, all 672 pairwise comparisons | **large** (Cliff's delta) |
+| Extra cascade depth from recovering, median across cells | **+77 links** (range +31.5 to +104) |
+
+**Verdict: robust.**
+
+Median cascade depth by threshold (of ~232 links):
+
+| Threshold | spf-static | spf-reconverge | ecmp | cspf | orbit |
+|---|---|---|---|---|---|
+| 0.75 | **59** | 141 | 134 | 141 | 142 |
+| 0.80 | **54** | 134 | 128 | 132 | 134 |
+| 0.85 | **49** | 129 | 120 | 126 | 126 |
+| 0.90 | **46** | 125 | 116 | 118 | 118 |
+| 0.95 | **42** | 120 | 111 | 111 | 108 |
+| 0.98 | **39** | 117 | 107 | 106 | 102.5 |
+| 1.00 | **38** | 111 | 102 | 103 | **99** |
+
+The ordering never changes. Raising the threshold to 1.00 - where only a link at or beyond its
+full capacity can fail - reduces cascade depth for everyone but does not close the gap: static
+SPF still suffers 38 against 99-111.
+
+Dwell time behaves similarly. Depths are flat from 1 to 20 ticks and fall for everyone at 40
+ticks (4 s of sustained overload) without changing the ordering: static 43 against 95-103.
+
+Delivery ratio tells the same story at every threshold. Static SPF's advantage over the best
+recovering algorithm is +0.037 to +0.052 overall PDR, and it is largest at the *most*
+permissive thresholds, not the tightest.
+
+### What this does and does not license
+
+**Supported:** in this model, across every cascade rule tested, an algorithm that reroutes
+after a failure propagates a substantially deeper cascade and delivers less traffic than one
+that does not. The effect is not a threshold artefact.
+
+**Not supported, and not claimed:** that this holds in real networks. The result rests on the
+project's own cascade abstraction - a link fails when utilisation stays above theta for
+`dwell` consecutive ticks - which is a modelling assumption, not a measured property of
+hardware. The sweep rules out sensitivity to that rule's *parameters*; it cannot rule out
+sensitivity to the rule's *form*. A model where overload degrades capacity gradually, or where
+failure probability rises smoothly with utilisation, might behave differently and has not been
+tested.
+
+**The mechanism is plausible and consistent with the data:** recovery relocates displaced
+demand onto surviving links, which pushes them over the threshold, which fails them, which
+displaces more demand. Static SPF blackholes the affected traffic instead, and blackholed
+traffic loads nothing. That is why its advantage grows as the threshold becomes *more*
+permissive - more headroom means more room for relocated traffic to do damage before anything
+fails.
+
+**What it implies for the design:** ORBIT already carries a utilisation term in its placement
+cost and evidently does not weight it aggressively enough to avoid this. A controller that
+refused to place traffic above a ceiling strictly below theta is the obvious next experiment,
+and it has not been run. Whether such a controller would beat static SPF on delivery - rather
+than merely on cascade depth - is unknown.
 
 ---
 
@@ -258,9 +331,10 @@ Every clause is measured, and the cost clause is stated as prominently as the be
 
 1. **The contribution claim must be rewritten.** The ablation shows M1, M3 and M4 are inert.
    ORBIT is one mechanism, not four.
-2. **The cascade result needs following up.** Recovery makes cascades worse in this model and
-   static SPF wins; that is either a real effect worth a paper section or a modelling
-   artefact of the overload threshold, and it is currently unknown which.
+2. **The cascade result is robust to its parameters but rests on one model form.** The sweep
+   (25,200 runs, 168 cells) rules out threshold and dwell sensitivity. It does not rule out
+   sensitivity to the shape of the cascade rule itself, and no real-network claim may be made
+   from it.
 3. **The LP gap is implemented but not swept.** It is validated (no algorithm exceeds the
    bound) and measured at 2.4% on one 12-node case; a proper sweep over small topologies has
    not been run.

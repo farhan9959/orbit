@@ -1,6 +1,6 @@
 {
-  "git_sha": "4657661b576c6baea97dae2d8ae6ebf837533ce0",
-  "dirty": true,
+  "git_sha": "69d210b02b2b4c347de49a6835640101ae51cc7e",
+  "dirty": false,
   "python": "3.14.6",
   "platform": "Windows-11-10.0.26200-SP0",
   "processor": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
@@ -187,6 +187,6 @@
     "scale_free-n60-load0.9-cascading-centralised-th1.0-dw20",
     "scale_free-n60-load0.9-cascading-centralised-th1.0-dw40"
   ],
-  "started_at": "2026-08-17T13:55:37",
-  "wall_clock_s": 1642.3359838000033
+  "started_at": "2026-08-18T01:23:02",
+  "wall_clock_s": 4622.065480600024
 }

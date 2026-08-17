@@ -1,0 +1,38 @@
+{
+  "git_sha": "459f943d41ce7241bcf3bbf9c9d4bce2d1b70134",
+  "dirty": false,
+  "experiment": "a10-optimality",
+  "trials": 30,
+  "algorithms": [
+    "spf-static",
+    "spf-reconverge",
+    "ecmp",
+    "cspf",
+    "orbit"
+  ],
+  "families": [
+    "waxman",
+    "grid",
+    "ring",
+    "scale_free"
+  ],
+  "sizes": [
+    9,
+    12,
+    15
+  ],
+  "loads": [
+    0.5,
+    0.7,
+    0.9,
+    1.2
+  ],
+  "failures": [
+    "none",
+    "critical_link"
+  ],
+  "max_lp_nodes": 15,
+  "relaxation": "splittable multi-commodity flow; the gap is a conservative bound",
+  "started_at": "2026-08-18T05:01:47",
+  "wall_clock_s": 5.9609377999731805
+}

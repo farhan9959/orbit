@@ -215,6 +215,16 @@ actively harmful under cascading overload. And reserving headroom is what stops 
 The optimum is not the most conservative setting: delivery peaks near 0.95 and falls to 0.271
 at 0.6, because excessive caution declines more traffic than the cascade would have destroyed.
 
+We then tested whether the ceiling is a general improvement, over the full headline grid at
+load 0.7 (3,360 runs). It is not. Against plain ORBIT it loses aggregate delivery in 20 of 28
+scenarios and its median paired difference on CRITICAL delivery is exactly zero. Pooled
+medians across scenarios suggested a benefit; the paired test, which the design exists to
+support, shows there is none. The ceiling is a cascade-specific mechanism, is off by default,
+and is **not** claimed as a contribution.
+
+That the pooled and paired views disagree is worth stating on its own. Pooling across scenarios
+of differing difficulty allowed gains in a few easy cells to mask losses in many hard ones.
+
 ## 5. Threats to validity
 
 * **Flow-level, not packet-level.** Sub-tick dynamics, TCP congestion control, microbursts and
@@ -265,6 +275,7 @@ reported.
 
 1. The literature review, which gates every positioning claim.
 2. Whether the cascade result survives a different cascade *form*, not just different parameters.
-3. Whether M1, M3 and M4 matter under any tested condition, or should be removed.
+3. Whether M1, M3 and M4 matter under any tested condition, or should be removed. The
+   utilisation ceiling has already been through this and was rejected.
 4. An optimality-gap sweep, so "how far from optimal" has an answer.
 5. Cross-validation against Mininet on a small topology, comparing trends rather than absolutes.

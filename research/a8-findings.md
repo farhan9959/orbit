@@ -364,10 +364,49 @@ the cascade rule it is tuned against, and a ceiling tuned to a threshold the ope
 know is not a deployable design. The result is evidence that *the model's* cascade is
 avoidable, and a demonstration that admission control beats forced placement under overload.
 
-**Not tested:** whether the ceiling harms the non-cascade scenarios where ORBIT's original
-advantage lives. It almost certainly costs delivery there, since it declines traffic the
-network could carry, and it is not enabled by default for that reason. Measuring that
-trade-off across the headline grid is the next experiment and has not been run.
+### The cost outside cascade - measured, and it does not pay
+
+`a9-ceiling-cost`, **3,360 runs**, manifest `dirty: false`. The full headline grid (4 families
+x 7 failure scenarios) at offered load 0.7, 30 paired trials, with and without the ceiling.
+
+Pooled medians look favourable to the ceiling:
+
+| Algorithm | CRITICAL | HIGH | overall | LOW |
+|---|---|---|---|---|
+| cspf | 0.790 | 0.705 | 0.593 | **0.426** |
+| orbit | 0.827 | 0.743 | 0.583 | 0.321 |
+| orbit-ceiling-0.9 | **0.897** | 0.805 | 0.570 | 0.226 |
+| orbit-ceiling-0.95 | **0.897** | **0.818** | **0.604** | 0.250 |
+
+**The paired per-scenario test says the opposite, and it is the correct test.** Against plain
+ORBIT across the 28 scenarios:
+
+| Comparison | overall PDR | CRITICAL PDR |
+|---|---|---|
+| ceiling-0.95 vs orbit | **5 wins / 20 losses**, median -0.018 | 4 wins / 6 losses, median **0.000** |
+| ceiling-0.9 vs orbit | **4 wins / 23 losses**, median -0.025 | 4 wins / 7 losses, median **0.000** |
+
+The ceiling **loses aggregate delivery in the large majority of scenarios and produces no
+reliable CRITICAL benefit at all** - the median paired difference on CRITICAL is exactly zero,
+with wins and losses roughly balanced. It also drives LOW-class delivery down further than
+plain ORBIT already does, from 0.321 to 0.250.
+
+The discrepancy between the pooled and paired views is itself worth recording. Pooling medians
+across scenarios of differing difficulty lets a gain in a few easy scenarios mask losses in
+many harder ones. The design is paired precisely so that this cannot happen, and here the
+pairing changes the conclusion. **A pooled table would have reported a benefit that the paired
+test shows is not there.**
+
+### Verdict on the ceiling
+
+The utilisation ceiling is a **cascade-specific mechanism, not a general improvement**. It is
+decisive under cascading overload - depth 0, +0.325 PDR over static SPF - and it is a net
+negative everywhere else. It stays **off by default**, and it is not claimed as a fifth ORBIT
+mechanism.
+
+What it does establish generally is the finding underneath it: under cascading overload,
+forcing unplaceable flows onto loaded paths is harmful, and admission control beats forced
+placement. That is a statement about a regime, not about a controller.
 
 ---
 
@@ -411,8 +450,8 @@ Every clause is measured, and the cost clause is stated as prominently as the be
 ## What must change before any of this is published
 
 1. **The contribution claim must be rewritten.** The ablation shows M1, M3 and M4 are inert.
-   ORBIT is one mechanism, not four. The utilisation ceiling is a fifth candidate mechanism
-   with a measured effect, but it is only measured under cascade and is off by default.
+   ORBIT is one mechanism, not four. The utilisation ceiling was tested as a fifth candidate
+   and rejected: decisive under cascade, a net negative across the headline grid.
 2. **The cascade result is robust to its parameters but rests on one model form.** The sweep
    (25,200 runs, 168 cells) rules out threshold and dwell sensitivity. It does not rule out
    sensitivity to the shape of the cascade rule itself, and no real-network claim may be made

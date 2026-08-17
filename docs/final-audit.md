@@ -31,7 +31,7 @@ Measured at the final commit. 341 Python tests, 18 TypeScript tests, 92% coverag
 | F17 | B2 SPF with reconvergence, flooding delay, hold-down | Implemented | detector models the timing |
 | F18 | B3 ECMP | Implemented | required real multipath in the allocator |
 | F19 | B4 CSPF on residual capacity | Implemented | `orbit/algorithms/cspf.py` |
-| F20 | ORBIT controller, M1–M4 | Implemented | **ablation shows M1, M3, M4 are inert** |
+| F20 | ORBIT controller, M1–M4 | Implemented | **ablation shows M1, M3, M4 are inert**; a fifth candidate (utilisation ceiling) was tested and rejected |
 | F21 | Every control decision recorded as a structured event | Implemented | `orbit/events.py`, emitted by every algorithm |
 | F22 | Optimality gap against an LP on small topologies | Partial | `orbit/optimal.py` implemented and validated; **not swept** |
 | F23 | Declare an experiment as a spec and run it headless | Implemented | `orbit/scenarios.py`, `orbit/cli.py`, `experiments/specs/` |

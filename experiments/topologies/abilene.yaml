@@ -1,0 +1,39 @@
+# A hand-written topology spec, to exercise F2b end to end.
+#
+# The node set and adjacencies are the 11-node Abilene backbone as it is conventionally drawn
+# in the traffic-engineering literature. Capacities and delays here are ROUND NUMBERS CHOSEN
+# FOR THIS FILE, not measured values from the real network, and nothing in the results claims
+# otherwise. Treat this as a shaped example, not a dataset.
+#
+#   orbit topology --file experiments/topologies/abilene.yaml
+#   orbit run --topology-file experiments/topologies/abilene.yaml --failure critical_link
+name: abilene-shaped
+
+nodes:
+  - {id: seattle,    srlg: [region:west]}
+  - {id: sunnyvale,  srlg: [region:west]}
+  - {id: losangeles, srlg: [region:west]}
+  - {id: denver,     srlg: [region:mountain]}
+  - {id: kansascity, srlg: [region:central]}
+  - {id: houston,    srlg: [region:south]}
+  - {id: chicago,    srlg: [region:midwest]}
+  - {id: indianapolis, srlg: [region:midwest]}
+  - {id: atlanta,    srlg: [region:south]}
+  - {id: washington, srlg: [region:east]}
+  - {id: newyork,    srlg: [region:east]}
+
+links:
+  - {src: seattle,      dst: sunnyvale,    capacity_mbps: 100, prop_delay_ms: 8}
+  - {src: seattle,      dst: denver,       capacity_mbps: 100, prop_delay_ms: 12}
+  - {src: sunnyvale,    dst: losangeles,   capacity_mbps: 100, prop_delay_ms: 4}
+  - {src: sunnyvale,    dst: denver,       capacity_mbps: 100, prop_delay_ms: 11}
+  - {src: losangeles,   dst: houston,      capacity_mbps: 100, prop_delay_ms: 19}
+  - {src: denver,       dst: kansascity,   capacity_mbps: 100, prop_delay_ms: 7}
+  - {src: kansascity,   dst: houston,      capacity_mbps: 100, prop_delay_ms: 9}
+  - {src: kansascity,   dst: indianapolis, capacity_mbps: 100, prop_delay_ms: 8}
+  - {src: houston,      dst: atlanta,      capacity_mbps: 100, prop_delay_ms: 11}
+  - {src: chicago,      dst: indianapolis, capacity_mbps: 100, prop_delay_ms: 3}
+  - {src: indianapolis, dst: atlanta,      capacity_mbps: 100, prop_delay_ms: 8}
+  - {src: atlanta,      dst: washington,   capacity_mbps: 100, prop_delay_ms: 9}
+  - {src: chicago,      dst: newyork,      capacity_mbps: 100, prop_delay_ms: 12}
+  - {src: washington,   dst: newyork,      capacity_mbps: 100, prop_delay_ms: 4}

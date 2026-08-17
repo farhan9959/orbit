@@ -7,8 +7,12 @@ import { EventLog } from "./components/EventLog";
 import { Timeline } from "./components/Timeline";
 import { ResultsTable } from "./components/ResultsTable";
 import { Legend } from "./components/Legend";
+import { LivePanel } from "./components/LivePanel";
+
+type Mode = "replay" | "live";
 
 export default function App() {
+  const [mode, setMode] = useState<Mode>("replay");
   const [demo, setDemo] = useState<Demo | null>(null);
   const [results, setResults] = useState<Results | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -41,10 +45,43 @@ export default function App() {
 
   const headline = useMemo(() => results?.["a8-headline"], [results]);
 
+  const modeSwitch = (
+    <div role="group" aria-label="View mode" className="flex gap-2">
+      {(["replay", "live"] as const).map((option) => (
+        <button
+          key={option}
+          type="button"
+          aria-pressed={mode === option}
+          onClick={() => setMode(option)}
+          className={`rounded border px-3 py-1 text-sm ${
+            mode === option
+              ? "border-slate-300 bg-slate-700 font-semibold"
+              : "border-slate-600 bg-slate-900"
+          }`}
+        >
+          {option === "replay" ? "Replay committed runs" : "Live session"}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (mode === "live") {
+    return (
+      <div className="mx-auto max-w-[1400px] p-4 md:p-6">
+        <header className="mb-4">
+          <h1 className="text-2xl font-bold">ORBIT</h1>
+        </header>
+        <div className="mb-4">{modeSwitch}</div>
+        <LivePanel />
+      </div>
+    );
+  }
+
   if (error) {
     return (
       <main className="p-8">
         <h1 className="text-xl font-bold">ORBIT</h1>
+        <div className="my-4">{modeSwitch}</div>
         <p className="mt-2 text-red-300">{error}</p>
       </main>
     );
@@ -79,8 +116,9 @@ export default function App() {
 
       <section aria-labelledby="controls-heading" className="mb-4">
         <h2 id="controls-heading" className="sr-only">
-          Algorithm selection
+          View mode and algorithm selection
         </h2>
+        <div className="mb-3">{modeSwitch}</div>
         <div className="flex flex-wrap gap-4">
           {(
             [

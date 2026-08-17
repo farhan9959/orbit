@@ -1,0 +1,40 @@
+{
+  "git_sha": "5366db97d0b143fe529114a32de0cafa0d1146e9",
+  "dirty": false,
+  "python": "3.14.6",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "processor": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+  "packages": {
+    "numpy": "2.5.2",
+    "scipy": "1.18.0"
+  },
+  "experiment": "a10-scale",
+  "trials": 30,
+  "algorithms": [
+    "spf-static",
+    "spf-reconverge",
+    "ecmp",
+    "cspf",
+    "orbit"
+  ],
+  "scenarios": [
+    "waxman-n50-load0.7-critical_link-centralised-deg4.0",
+    "waxman-n50-load0.7-random_node_30-centralised-deg4.0",
+    "waxman-n100-load0.7-critical_link-centralised-deg4.0",
+    "waxman-n100-load0.7-random_node_30-centralised-deg4.0",
+    "waxman-n250-load0.7-critical_link-centralised-deg4.0",
+    "waxman-n250-load0.7-random_node_30-centralised-deg4.0",
+    "waxman-n500-load0.7-critical_link-centralised-deg4.0",
+    "waxman-n500-load0.7-random_node_30-centralised-deg4.0",
+    "scale_free-n50-load0.7-critical_link-centralised-deg4.0",
+    "scale_free-n50-load0.7-random_node_30-centralised-deg4.0",
+    "scale_free-n100-load0.7-critical_link-centralised-deg4.0",
+    "scale_free-n100-load0.7-random_node_30-centralised-deg4.0",
+    "scale_free-n250-load0.7-critical_link-centralised-deg4.0",
+    "scale_free-n250-load0.7-random_node_30-centralised-deg4.0",
+    "scale_free-n500-load0.7-critical_link-centralised-deg4.0",
+    "scale_free-n500-load0.7-random_node_30-centralised-deg4.0"
+  ],
+  "started_at": "2026-08-18T04:34:03",
+  "wall_clock_s": 5448.870659499982
+}

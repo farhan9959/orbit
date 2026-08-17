@@ -1,0 +1,30 @@
+{
+  "git_sha": "0d0ebf9ed9dba3d00fb7826ebe4809760c69787a",
+  "dirty": false,
+  "python": "3.14.6",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "processor": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+  "packages": {
+    "numpy": "2.5.2",
+    "scipy": "1.18.0"
+  },
+  "experiment": "a8-ablation",
+  "trials": 30,
+  "algorithms": [
+    "cspf",
+    "orbit",
+    "orbit-no-protection",
+    "orbit-no-preemption",
+    "orbit-no-damping",
+    "orbit-no-fallback",
+    "orbit-restoration-only"
+  ],
+  "scenarios": [
+    "waxman-n60-load0.9-congestion_surge-centralised",
+    "waxman-n60-load0.9-critical_link-centralised",
+    "scale_free-n60-load0.9-congestion_surge-centralised",
+    "scale_free-n60-load0.9-critical_link-centralised"
+  ],
+  "started_at": "2026-08-17T12:23:32",
+  "wall_clock_s": 98.19422719998693
+}

@@ -1,5 +1,5 @@
 {
-  "git_sha": "f2e35e2277a078d881b50ad4f99fbf6b6df2df22",
+  "git_sha": "0d0ebf9ed9dba3d00fb7826ebe4809760c69787a",
   "dirty": false,
   "python": "3.14.6",
   "platform": "Windows-11-10.0.26200-SP0",
@@ -47,6 +47,6 @@
     "scale_free-n60-load0.7-congestion_surge-centralised",
     "scale_free-n60-load0.7-cascading-centralised"
   ],
-  "started_at": "2026-08-17T05:33:10",
-  "wall_clock_s": 738.6975601000013
+  "started_at": "2026-08-17T12:19:04",
+  "wall_clock_s": 698.2195467999991
 }

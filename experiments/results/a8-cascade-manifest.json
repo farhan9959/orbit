@@ -8,7 +8,7 @@
     "numpy": "2.5.2",
     "scipy": "1.18.0"
   },
-  "experiment": "a8-dual-control",
+  "experiment": "a8-cascade",
   "trials": 30,
   "algorithms": [
     "spf-static",
@@ -18,11 +18,11 @@
     "orbit"
   ],
   "scenarios": [
-    "waxman-n60-load0.7-critical_link-centralised",
-    "waxman-n60-load0.7-critical_link-distributed",
-    "waxman-n60-load0.7-random_node_30-centralised",
-    "waxman-n60-load0.7-random_node_30-distributed"
+    "grid-n60-load0.9-cascading-centralised",
+    "ring-n60-load0.9-cascading-centralised",
+    "waxman-n60-load0.9-cascading-centralised",
+    "scale_free-n60-load0.9-cascading-centralised"
   ],
-  "started_at": "2026-08-17T12:20:06",
-  "wall_clock_s": 62.16675230000692
+  "started_at": "2026-08-17T12:24:09",
+  "wall_clock_s": 36.697521800000686
 }

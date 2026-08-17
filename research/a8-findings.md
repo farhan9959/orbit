@@ -1,7 +1,7 @@
 # A8 — the go/no-go gate: findings
 
-Source: `experiments/results/a8-{headline,dual-control,load-sweep}.parquet`, 5,550 runs
-generated at commit `f2e35e2` on a clean tree (all three manifests record `dirty: false`).
+Source: `experiments/results/a8-*.parquet`, ~9,000 runs across five grids (headline,
+dual-control, load-sweep, ablation, cascade) generated at commit `0d0ebf9` on a clean tree (all three manifests record `dirty: false`).
 60-node topologies, 150 flows, failure injected at t = 2 s, 30 paired trials per cell.
 Headline grid: 4 topology families x 7 failure scenarios x 5 algorithms.
 
@@ -45,17 +45,14 @@ mechanism earns its keep when the shortage is **capacity**, not connectivity —
 capacity-aware algorithm has found a feasible path, priority ordering has little left to
 decide.
 
-### H2 — "lower time-to-restore for CRITICAL" — **still not measurable**
+### H2 — "lower time-to-restore for CRITICAL" — **not supported; the traffic never fully returns**
 
-Median time-to-restore is **0.0 s for every algorithm**, and **69–75% of runs are censored**
-(no restore observed at all). At a 100 ms tick with a 150 ms detection interval, recovery
-either completes inside the 3-tick dwell window or never satisfies the criterion. The metric
-separates nothing.
-
-The high censoring rate is itself a problem: it means the 95%-of-pre-failure-mean criterion
-is rarely met, most likely because at offered load 0.7 several classes sit below that level
-for the rest of the run regardless of recovery. **H2 cannot be evaluated from this data** and
-the metric needs redefining, not merely a finer tick.
+Median time-to-restore is 0.0 s for every algorithm and 69–75% of runs censor. The added
+`peak_restore_fraction` metric now explains why, and it is not a metric bug — see the H2
+section further down. CRITICAL traffic recovers to roughly 80% of its pre-failure rate and
+stops, so the 95% criterion is unreachable and censoring is the correct answer. Time-to-
+converge, which *is* measurable, shows no separation either: 0.3 s for every recovering
+algorithm.
 
 ### H3 — "lower aggregate throughput, higher control overhead" — **first half confirmed but small, second half refuted**
 
@@ -139,13 +136,108 @@ both), consistent with it depending on capacity decisions rather than on early k
 
 ## Other measured results
 
-* **Preemption almost never fires** — median 0 per run. Since ORBIT still wins CRITICAL
-  decisively, the win is coming from M2 (priority-ordered constrained restoration), not M3.
-  The ablation sweep would confirm this and has not been run.
-* **Cascade depth is 10.0 for every algorithm**, i.e. every cascading run hits the
-  `max_failures` cap. The metric is saturated and says nothing. **Unmeasured.**
+* **Preemption never fires** — median 0 per run. The ablation below confirms M2 carries the
+  entire result.
 * **Static SPF is a genuine floor**, not a strawman: 0.685 CRITICAL against 0.843 for the
   same algorithm with reconvergence enabled.
+
+---
+
+## Ablation — M2 does all the work (negative result for M1, M3, M4)
+
+`a8-ablation`, 840 runs: Waxman and scale-free, congestion-surge and critical-link, offered
+load 0.9, 30 paired trials, each ORBIT mechanism disabled in turn.
+
+| Variant | CRITICAL | HIGH | overall | preemptions | reroutes |
+|---|---|---|---|---|---|
+| cspf | 0.7515 | 0.5067 | 0.4240 | 0 | 2.5 |
+| **orbit (all four)** | **0.8866** | **0.6948** | 0.4154 | 0 | 156 |
+| orbit-no-protection (M1 off) | 0.8866 | 0.6948 | 0.4154 | 0 | 156 |
+| orbit-no-preemption (M3 off) | 0.8866 | 0.6948 | 0.4154 | 0 | 155 |
+| orbit-no-damping (M4 off) | 0.8866 | 0.6948 | 0.4154 | 0 | 156 |
+| **orbit-restoration-only (M1, M3, M4 all off)** | **0.8866** | **0.6948** | 0.4154 | 0 | 155 |
+| orbit-no-fallback | 0.8373 | 0.6147 | 0.3565 | 0 | 82 |
+
+**Disabling M1, M3 and M4 together changes nothing, to four decimal places.** Restoration-only
+ORBIT is indistinguishable from full ORBIT on every metric. The entire measured advantage
+over CSPF (+0.135 CRITICAL, +0.188 HIGH at load 0.9) comes from **M2 alone** —
+priority-ordered constrained restoration.
+
+This is a negative result for three quarters of the design:
+
+* **M1 protection** never helps because M2 finds an equivalent path anyway, within the same
+  tick. Precomputed backups buy nothing when recomputation is not the bottleneck.
+* **M3 preemption never fires** — median 0 preemptions per run, across every scenario. The
+  restriction to strictly-lower-priority victims plus the best-effort fallback means the
+  situation preemption exists for essentially does not arise.
+* **M4 damping** changes no outcome, though it is also not costing anything.
+
+The only non-M2 mechanism that matters is the **best-effort fallback**, which is not one of
+the four documented mechanisms — it is the fix from `fc415d9`. Removing it costs 0.049
+CRITICAL and 0.080 HIGH.
+
+**Consequence for the contribution claim.** `03-simulation-model.md` §6 describes ORBIT as an
+integration of four mechanisms. The measurement says it is one mechanism plus three that are
+inert under these conditions. The honest claim is now "priority-ordered constrained
+restoration outperforms priority-blind constrained restoration", which is narrower and does
+not need the word "integration". M1/M3/M4 should either be shown to matter under conditions
+not yet tested (tighter capacity, faster failure arrival, no fallback) or dropped.
+
+---
+
+## Cascading failure — the hypothesis is refuted
+
+With the cap raised from 10 to 200, cascade depth is measurable for the first time.
+`a8-cascade`, 600 runs, all four families, offered load 0.9:
+
+| Algorithm | median cascade depth | max | CRITICAL PDR | overall PDR |
+|---|---|---|---|---|
+| spf-static | **31.5** | 63 | **0.188** | **0.201** |
+| orbit | 76.0 | 178 | 0.133 | 0.138 |
+| ecmp | 77.0 | 187 | 0.126 | 0.121 |
+| cspf | 78.5 | 184 | 0.118 | 0.126 |
+| spf-reconverge | 88.0 | 187 | 0.116 | 0.103 |
+
+`03-simulation-model.md` §5 called this "the project's strongest single result" if
+capacity-aware placement reduced cascade depth. **It does not.** ORBIT's 76 against CSPF's
+78.5 is a rounding difference next to the spread.
+
+The striking result is the opposite one: **static SPF suffers less than half the cascade
+depth of every recovering algorithm, and delivers the most traffic under cascade.** Because
+it never reroutes, it never dumps displaced traffic onto surviving links, so it never trips
+the overload threshold that propagates the cascade. Every algorithm that recovers makes the
+cascade worse, and the better it is at recovering, the more traffic it moves onto links that
+then fail.
+
+That is a genuine and uncomfortable finding: **under cascading overload, recovery is
+actively harmful in this model.** It deserves its own investigation — in particular whether
+a recovery controller that respected a utilisation ceiling below the cascade threshold would
+avoid it. ORBIT has the machinery for that (the utilisation term in its cost) and evidently
+does not weight it aggressively enough.
+
+---
+
+## H2 resolved: the censoring is real, not a metric bug
+
+`peak_restore_fraction` explains the 69–75% censoring directly. Median peak post-failure
+delivery, as a fraction of the pre-failure mean:
+
+| Algorithm | peak restore fraction | time-to-converge |
+|---|---|---|
+| cspf | 0.801 | 0.3 s |
+| orbit | 0.800 | 0.3 s |
+| spf-reconverge | 0.792 | 0.3 s |
+| ecmp | 0.786 | 0.3 s |
+| spf-static | 0.691 | 0.0 s |
+
+CRITICAL traffic recovers to about **80%** of its pre-failure rate and stops there. The 95%
+criterion is therefore unreachable, and censoring is the *correct* answer: the capacity is
+genuinely gone, and no controller can route around a shortage that does not exist elsewhere.
+H2 was not measuring a slow recovery, it was measuring an incomplete one.
+
+**Time-to-converge is measurable and does separate the algorithms** — 0.3 s for every
+recovering algorithm, 0.0 s for static SPF, which never changes a route. The control plane
+settles long before delivery does, which is exactly the distinction §7 warned about.
 
 ---
 
@@ -164,14 +256,15 @@ Every clause is measured, and the cost clause is stated as prominently as the be
 
 ## What must change before any of this is published
 
-1. **H2 is unevaluable.** 69–75% censoring means the time-to-restore definition, not just the
-   tick resolution, needs rework.
-2. **The cascade cap is binding**, so cascade depth is unmeasured.
-3. **No optimality bound.** The LP gap on <= 15-node topologies is specified and not built,
-   so "how far from optimal" is unanswered.
-4. **The M1–M4 ablation has not been run.** Preemption firing at a median of 0 suggests M2
-   carries the result, but that is an inference, not a measurement.
-5. **Sizes 250 and 500 were not benchmarked** and are not claimed.
+1. **The contribution claim must be rewritten.** The ablation shows M1, M3 and M4 are inert.
+   ORBIT is one mechanism, not four.
+2. **The cascade result needs following up.** Recovery makes cascades worse in this model and
+   static SPF wins; that is either a real effect worth a paper section or a modelling
+   artefact of the overload threshold, and it is currently unknown which.
+3. **The LP gap is implemented but not swept.** It is validated (no algorithm exceeds the
+   bound) and measured at 2.4% on one 12-node case; a proper sweep over small topologies has
+   not been run.
+4. **Sizes 250 and 500 were not benchmarked** and are not claimed.
 6. **Two defects were found in ORBIT's placement path after the first grid run**, both by the
    dashboard and by a precondition guard rather than by the test suite. Regression tests now
    cover both, but the episode is a reason to treat these numbers as provisional until an

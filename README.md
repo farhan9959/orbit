@@ -171,7 +171,16 @@ Reporting these is the point, not an embarrassment.
    pre-failure rate and stops, so the 95% criterion is unreachable and ~70% of runs censor.
    The capacity is genuinely gone; the hypothesis was measuring an incomplete recovery, not
    a slow one.
-4. **Two bugs in ORBIT's placement path were found after the first benchmark run**, both by
+4. **Under cascading overload, recovery is harmful.** Static SPF suffers less than half the
+   cascade depth of every recovering algorithm and delivers the most traffic, because it never
+   displaces traffic onto surviving links. A 25,200-run sweep over the cascade threshold and
+   dwell time confirms this in **168 of 168 parameter cells** with zero reversals.
+5. **The cascade is avoidable, but not for the reason it appears.** A controller reserving ~5%
+   link headroom eliminates it entirely and delivers 3.7x static SPF's traffic — yet controls
+   show roughly 60% of that gain comes from *declining unplaceable flows*, not from the
+   headroom. The best-effort fallback added to fix an unfair asymmetry turns out to be
+   actively harmful in this regime.
+6. **Two bugs in ORBIT's placement path were found after the first benchmark run**, both by
    the dashboard and by a precondition guard rather than by the test suite. Both penalised
    ORBIT, and correcting them reversed one published conclusion. The results were retracted
    and regenerated. Regression tests now cover both.
@@ -205,6 +214,10 @@ deploy/         Dockerfiles, nginx, compose  (UNVERIFIED)
 | [docs/06-roadmap.md](docs/06-roadmap.md) | phases, risks, tradeoff log |
 | [docs/learning-notes.md](docs/learning-notes.md) | WHAT/WHY/HOW/TRADEOFFS per component |
 | [research/a8-findings.md](research/a8-findings.md) | **the results and hypothesis verdicts** |
+| [research/paper.md](research/paper.md) | the study written up as a paper draft |
+| [research/methodology.md](research/methodology.md) | methodology as executed |
+| [docs/final-audit.md](docs/final-audit.md) | requirement-by-requirement status |
+| [docs/final-security-audit.md](docs/final-security-audit.md) | every control mapped to its test |
 
 ## Licence
 

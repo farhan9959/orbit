@@ -1,0 +1,55 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install ruff black mypy
+      - run: ruff check orbit tests experiments api
+      - run: black --check orbit tests experiments api
+      - run: mypy
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: orbit, POSTGRES_PASSWORD: orbitpw, POSTGRES_DB: orbit }
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e ".[dev]" fastapi "uvicorn[standard]" sqlalchemy alembic "psycopg[binary]" argon2-cffi pydantic-settings prometheus-client email-validator httpx numpy scipy pandas pyarrow matplotlib networkx
+      - run: pytest --cov=orbit/engine --cov=orbit/algorithms --cov-fail-under=80
+        env:
+          DATABASE_URL: postgresql+psycopg://orbit:orbitpw@127.0.0.1:55432/orbit
+          SESSION_SECRET: ci-secret-value-at-least-32-bytes-long!!
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - run: npm ci --prefix web
+      - run: npx --prefix web tsc --noEmit
+      - run: npx --prefix web eslint web
+      - run: npm run --prefix web test -- --run
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gitleaks/gitleaks-action@v2
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install pip-audit bandit
+      - run: bandit -r orbit api -ll
+      - run: pip-audit || true

@@ -20,3 +20,5 @@ web/node_modules/
 web/dist/
 web/public/data/*.json
 .claude/launch.json
+.env
+api/migrations/versions/__pycache__/

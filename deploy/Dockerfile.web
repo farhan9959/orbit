@@ -1,0 +1,11 @@
+FROM node:22-alpine@sha256:9f6bf0b4b0d3d0c1e0c7b0f9e6b1d9f1e0f5f4f3e2d1c0b9a8f7e6d5c4b3a2f1 AS builder
+WORKDIR /build
+COPY web/package*.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
+FROM nginx:1.27-alpine
+COPY --from=builder /build/dist /usr/share/nginx/html
+COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80

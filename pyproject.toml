@@ -38,6 +38,13 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 
+[tool.ruff.lint.per-file-ignores]
+# B008 forbids function calls in argument defaults. FastAPI's dependency injection is
+# expressed exactly that way (`Depends(...)`), so the rule is wrong for these modules
+# rather than the code being wrong.
+"api/**" = ["B008"]
+"tests/api/**" = ["B008"]
+
 [tool.mypy]
 python_version = "3.12"
 files = ["orbit"]
@@ -46,10 +53,10 @@ strict = true
 # CLAUDE.md scopes strict typing to orbit/. The experiment harness is followed only because
 # orbit/cli.py imports it, and its numeric dependencies ship no stubs.
 [[tool.mypy.overrides]]
-module = ["experiments.*"]
+module = ["experiments.*", "api.*"]
 disallow_untyped_defs = false
 disallow_any_generics = false
 
 [[tool.mypy.overrides]]
-module = ["pandas.*", "scipy.*", "matplotlib.*", "networkx.*", "pyarrow.*"]
+module = ["pandas.*", "scipy.*", "matplotlib.*", "networkx.*", "pyarrow.*", "argon2.*"]
 ignore_missing_imports = true

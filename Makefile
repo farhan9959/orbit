@@ -17,12 +17,12 @@ test:
 	$(PY) -m pytest
 
 lint:
-	$(PY) -m ruff check orbit tests experiments
-	$(PY) -m black --check orbit tests experiments
+	$(PY) -m ruff check orbit tests experiments api
+	$(PY) -m black --check orbit tests experiments api
 
 format:
-	$(PY) -m black orbit tests experiments
-	$(PY) -m ruff check --fix orbit tests experiments
+	$(PY) -m black orbit tests experiments api
+	$(PY) -m ruff check --fix orbit tests experiments api
 
 typecheck:
 	$(PY) -m mypy
@@ -34,6 +34,18 @@ bench:
 
 reproduce:
 	$(PY) -m experiments.figures
+
+web-data:
+	$(PY) -m experiments.export_web
+
+api:
+	$(PY) -m uvicorn api.main:app --reload
+
+worker:
+	$(PY) -m api.worker
+
+migrate:
+	$(PY) -m alembic upgrade head
 
 clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .hypothesis

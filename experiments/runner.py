@@ -35,7 +35,7 @@ from orbit.algorithms import (
 from orbit.detect import DetectorConfig
 from orbit.engine import RunSummary, Simulation, SimulationConfig
 from orbit.errors import ValidationError
-from orbit.model import Priority
+from orbit.model import Priority, Topology
 from orbit.scenarios import (
     ExperimentSpec,
     ScenarioSpec,
@@ -138,9 +138,18 @@ def run_one(
     experiment: str,
     detector_config: DetectorConfig,
     orbit_config: OrbitConfig | None = None,
+    topology: Topology | None = None,
 ) -> RunRecord:
+    """`topology` overrides the generated family, for a spec file loaded via F2b.
+
+    Traffic and the failure schedule are still derived from the spec, against whatever
+    topology is in play, so a hand-written topology gets the same offered load and the same
+    failure catalogue as a generated one.
+    """
     seed = spec.seed_for(trial)
-    topology = build_topology(spec, seed)
+    supplied = topology is not None
+    if topology is None:
+        topology = build_topology(spec, seed)
     flows = build_traffic(spec, topology, seed)
     schedule = build_schedule(spec, topology, seed)
     detector = DetectorConfig(
@@ -164,8 +173,10 @@ def run_one(
     return RunRecord(
         experiment=experiment,
         scenario=spec.id,
-        family=spec.family.value,
-        nodes=spec.nodes,
+        family="file" if supplied else spec.family.value,
+        # For a generated topology this stays `spec.nodes` so every committed result keeps
+        # the value it was recorded with, including grid's rounding to a square.
+        nodes=len(topology.nodes) if supplied else spec.nodes,
         offered_load=spec.offered_load,
         failure=spec.failure.value,
         control_mode=spec.control_mode.value,

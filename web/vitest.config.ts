@@ -6,6 +6,8 @@ export default defineConfig({
     globals: true,
     include: ["src/**/*.test.{ts,tsx}"],
     pool: "threads",
-    poolOptions: { threads: { singleThread: true } },
+    // Vitest 4 moved the old `poolOptions.threads` settings to the top level.
+    maxWorkers: 1,
+    minWorkers: 1,
   },
 });

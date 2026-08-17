@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -30,7 +31,17 @@ from api.db import get_session
 from api.models import User
 from api.security import current_user, enforce_rate_limit
 from experiments.runner import make_algorithm
-from orbit.engine import Simulation, SimulationConfig
+from orbit.engine import (
+    FailureEvent,
+    FailureKind,
+    FailureSchedule,
+    Simulation,
+    SimulationConfig,
+    highest_betweenness_links,
+    random_links,
+    random_nodes,
+)
+from orbit.model import Topology
 from orbit.scenarios import (
     FailureScenario,
     ScenarioSpec,
@@ -64,15 +75,40 @@ class ControlRequest(BaseModel):
     action: str = Field(pattern="^(start|pause|step|reset)$")
 
 
+class InjectRequest(BaseModel):
+    """Interactive failure injection (requirement F13).
+
+    `kind` is a closed set, and targets are chosen **server-side** from the session's own
+    topology rather than named by the client. A client that could name arbitrary element
+    ids would be enumerating a topology it has not been shown, and would be able to send
+    ids belonging to somebody else's session.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str = Field(pattern="^(critical_link|random_link|random_node|srlg|surge)$")
+    count: int = Field(default=1, ge=1, le=10)
+    factor: float = Field(default=2.5, gt=0.0, le=10.0)
+
+
+class AlgorithmRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    algorithm: str = Field(pattern="^(spf-static|spf-reconverge|ecmp|cspf|orbit)$")
+
+
 @dataclass
 class LiveSession:
     id: str
     owner_id: uuid.UUID
     simulation: Simulation
+    schedule: FailureSchedule
+    algorithm: str
     running: bool = False
     deltas: int = 0
     pending: dict[str, Any] | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    injections: int = 0
 
     def merge(self, delta: dict[str, Any]) -> None:
         if self.pending is None:
@@ -116,14 +152,21 @@ def create_session(
     )
     seed = spec.seed_for(0)
     topology = build_topology(spec, seed)
+    schedule = build_schedule(spec, topology, seed)
     simulation = Simulation(
         topology,
         build_traffic(spec, topology, seed),
         make_algorithm(payload.algorithm),
         SimulationConfig(validate_each_recompute=False),
-        schedule=build_schedule(spec, topology, seed),
+        schedule=schedule,
     )
-    live = LiveSession(id=uuid.uuid4().hex, owner_id=user.id, simulation=simulation)
+    live = LiveSession(
+        id=uuid.uuid4().hex,
+        owner_id=user.id,
+        simulation=simulation,
+        schedule=schedule,
+        algorithm=payload.algorithm,
+    )
     _SESSIONS[live.id] = live
     return {"id": live.id}
 
@@ -143,7 +186,68 @@ def control(
         live.deltas = 0
     else:
         live.merge(_frame(live))
-    return {"tick": live.simulation.tick, "running": live.running}
+    return _state(live)
+
+
+@router.post("/{session_id}/inject")
+def inject(
+    session_id: str, payload: InjectRequest, user: User = Depends(current_user)
+) -> dict[str, Any]:
+    """Fail something in a running session, right now (requirement F13)."""
+    live = _owned(session_id, user)
+    topology = live.simulation.topology
+    now = live.simulation.time_s
+
+    if payload.kind == "surge":
+        event = FailureEvent(now, FailureKind.CONGESTION_SURGE, factor=payload.factor)
+    elif payload.kind == "critical_link":
+        event = FailureEvent(
+            now, FailureKind.LINK_DOWN, highest_betweenness_links(topology, payload.count)
+        )
+    elif payload.kind == "random_link":
+        targets = random_links(topology, payload.count / max(1, len(topology.links)), live.deltas)
+        event = FailureEvent(now, FailureKind.LINK_DOWN, targets)
+    elif payload.kind == "random_node":
+        targets = random_nodes(topology, payload.count / max(1, len(topology.nodes)), live.deltas)
+        event = FailureEvent(now, FailureKind.NODE_DOWN, targets)
+    else:
+        tags = sorted({tag for link in topology.links.values() for tag in link.srlg})
+        if not tags:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="topology has no SRLG tags")
+        event = FailureEvent(now, FailureKind.SRLG_DOWN, tuple(tags[: payload.count]))
+
+    if event.kind is not FailureKind.CONGESTION_SURGE and not event.targets:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="nothing left to fail")
+
+    live.schedule.inject(event)
+    live.injections += 1
+    live.merge(_frame(live))
+    return _state(live) | {"injected": {"kind": event.kind.value, "targets": list(event.targets)}}
+
+
+@router.post("/{session_id}/algorithm")
+def switch_algorithm(
+    session_id: str, payload: AlgorithmRequest, user: User = Depends(current_user)
+) -> dict[str, Any]:
+    """Hand the running session to a different controller (requirement F29).
+
+    The world carries over — same topology, same traffic, same failures already injected,
+    same tick — so the switch shows two controllers meeting the identical situation.
+    """
+    live = _owned(session_id, user)
+    live.simulation.switch_algorithm(make_algorithm(payload.algorithm))
+    live.algorithm = payload.algorithm
+    live.merge(_frame(live))
+    return _state(live)
+
+
+def _state(live: LiveSession) -> dict[str, Any]:
+    return {
+        "tick": live.simulation.tick,
+        "running": live.running,
+        "algorithm": live.algorithm,
+        "injections": live.injections,
+    }
 
 
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -153,8 +257,15 @@ def close_session(session_id: str, user: User = Depends(current_user)) -> None:
 
 
 def _frame(live: LiveSession) -> dict[str, Any]:
+    """One tick, encoded positionally against the snapshot's node and link ordering.
+
+    `util`, `linkDown` and `nodeDown` are arrays rather than id lists so the dashboard can
+    feed them straight to the same canvas it uses for replayed runs. At the 100-node session
+    cap that is a few hundred rounded floats at 4 Hz.
+    """
     result = live.simulation.step()
-    truth = result.topology
+    base = live.simulation.topology
+    truth = result.topology or base
     delivered: dict[str, float] = {}
     demanded: dict[str, float] = {}
     for sample in result.samples:
@@ -164,22 +275,32 @@ def _frame(live: LiveSession) -> dict[str, Any]:
         demanded[sample.priority.name] = (
             demanded.get(sample.priority.name, 0.0) + sample.demand_mbps
         )
+    links = sorted(base.links)
     return {
         "tick": result.tick,
         "time_s": round(result.time_s, 3),
         "delivered": {k: round(v, 2) for k, v in sorted(delivered.items())},
         "demanded": {k: round(v, 2) for k, v in sorted(demanded.items())},
         "blackholed": sum(1 for s in result.samples if s.blackholed),
-        "downLinks": ([lid for lid in truth.links if not truth.is_usable(lid)] if truth else []),
+        "util": [_utilisation(truth, result.link_load, lid) for lid in links],
+        "linkDown": [0 if truth.is_usable(lid) else 1 for lid in links],
+        "nodeDown": [0 if truth.node(nid).is_up else 1 for nid in sorted(base.nodes)],
+        "cascadeDepth": live.schedule.cascade_depth,
         "events": [{"type": e.type.value, "payload": e.payload} for e in result.events[:20]],
     }
 
 
+def _utilisation(truth: Topology, load: Mapping[str, float], link_id: str) -> float:
+    capacity = truth.link(link_id).capacity_mbps
+    return round(load.get(link_id, 0.0) / capacity, 4) if capacity > 0 else 0.0
+
+
 def _snapshot(live: LiveSession) -> dict[str, Any]:
-    topology = live.simulation._topology
+    topology = live.simulation.topology
     return {
         "type": "snapshot",
         "tick": live.simulation.tick,
+        "algorithm": live.algorithm,
         "nodes": sorted(topology.nodes),
         "links": [
             {"id": lid, "src": topology.link(lid).src, "dst": topology.link(lid).dst}

@@ -144,6 +144,18 @@ class FailureSchedule:
     def events(self) -> tuple[FailureEvent, ...]:
         return self._events
 
+    def inject(self, event: FailureEvent) -> None:
+        """Append an interactively-requested failure to the schedule (requirement F13).
+
+        The schedule stays a pure function of its event list, so resetting a session
+        replays the injected failure as well: the injection joins the script rather than
+        happening outside it. Events are appended rather than re-sorted, which keeps the
+        indices held in `_applied` valid — interactive injection is always "now", so the
+        list stays ordered by `at_s` anyway.
+        """
+        self._validate_targets(event)
+        self._events = (*self._events, event)
+
     @property
     def demand_scale(self) -> float:
         return self._surge

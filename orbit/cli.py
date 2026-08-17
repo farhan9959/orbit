@@ -6,9 +6,49 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from orbit.detect import ControlMode, DetectorConfig
+from orbit.errors import ValidationError
+from orbit.model import Topology
 from orbit.scenarios import ExperimentSpec, FailureScenario, ScenarioSpec, TopologyFamily
+
+
+def _load_topology(path: str) -> Topology:
+    """Read and validate a topology spec file (F2b).
+
+    File reading lives here rather than in `orbit/topospec.py` because the package is a pure
+    library with no I/O (see `orbit/__init__.py`). The loader parses text; the CLI owns the
+    filesystem.
+    """
+    from orbit.topospec import topology_from_yaml
+
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValidationError(f"topology file {path!r}: {exc.strerror or exc}") from exc
+    return topology_from_yaml(text)
+
+
+def _topology(args: argparse.Namespace) -> int:
+    topology = _load_topology(args.file)
+    degrees: dict[str, int] = {}
+    for link in topology.links.values():
+        degrees[link.src] = degrees.get(link.src, 0) + 1
+    print(
+        json.dumps(
+            {
+                "file": args.file,
+                "nodes": len(topology.nodes),
+                "links": len(topology.links),
+                "srlgs": sorted({tag for link in topology.links.values() for tag in link.srlg}),
+                "min_out_degree": min(degrees.get(node, 0) for node in topology.nodes),
+                "total_capacity_mbps": sum(link.capacity_mbps for link in topology.links.values()),
+            },
+            indent=2,
+        )
+    )
+    return 0
 
 
 def _run(args: argparse.Namespace) -> int:
@@ -16,6 +56,7 @@ def _run(args: argparse.Namespace) -> int:
 
     from experiments.runner import run_one
 
+    topology = _load_topology(args.topology_file) if args.topology_file else None
     spec = ScenarioSpec(
         family=TopologyFamily(args.family),
         nodes=args.nodes,
@@ -25,7 +66,7 @@ def _run(args: argparse.Namespace) -> int:
         ticks=args.ticks,
         control_mode=ControlMode(args.control_mode),
     )
-    record = run_one(spec, args.algorithm, args.trial, "cli", DetectorConfig())
+    record = run_one(spec, args.algorithm, args.trial, "cli", DetectorConfig(), topology=topology)
     print(json.dumps(asdict(record), indent=2, default=str))
     return 0
 
@@ -71,7 +112,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--failure", default="critical_link", choices=[f.value for f in FailureScenario]
     )
     run.add_argument("--trial", type=int, default=0)
+    run.add_argument(
+        "--topology-file",
+        default=None,
+        help="YAML topology spec to use instead of the generated family (F2b)",
+    )
     run.set_defaults(func=_run)
+
+    topology = sub.add_parser("topology", help="validate a YAML topology spec and describe it")
+    topology.add_argument("--file", required=True)
+    topology.set_defaults(func=_topology)
 
     bench = sub.add_parser("bench", parents=[common], help="run an experiment grid")
     bench.add_argument("--name", default="adhoc")

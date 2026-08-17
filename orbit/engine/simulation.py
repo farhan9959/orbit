@@ -136,6 +136,15 @@ class Simulation:
         return self._algorithm
 
     @property
+    def topology(self) -> Topology:
+        """The *initial* topology, before any scheduled failure.
+
+        Ground truth for the current tick comes from `TickResult.topology`; this is the
+        stable frame of reference a viewer indexes links and nodes against.
+        """
+        return self._topology
+
+    @property
     def tick(self) -> int:
         return self._tick
 
@@ -154,6 +163,20 @@ class Simulation:
     @property
     def control_calls(self) -> int:
         return self._control_calls
+
+    def switch_algorithm(self, algorithm: RoutingAlgorithm) -> None:
+        """Hand the running simulation to a different controller (requirement F29).
+
+        Topology, traffic, failure schedule, detector state and the tick counter all carry
+        over, so what is compared is two controllers meeting the identical world at the
+        identical instant. Clearing `_routing` is what forces a recompute on the next step:
+        the loop only recomputes when the view changed or nothing is placed, and an
+        algorithm swap is neither from the detector's point of view.
+        """
+        algorithm.reset()
+        self._algorithm = algorithm
+        self._routing = {}
+        self._stable_ticks = 0
 
     def reset(self) -> None:
         self._tick = 0

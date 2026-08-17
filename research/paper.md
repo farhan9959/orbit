@@ -1,7 +1,10 @@
 # Priority-aware constrained recovery: what it buys, what it costs, and what it does not do
 
-**Status: draft. Every number traces to a committed results file. The positioning section is
-incomplete because the literature review has not been done, and no novelty claim is made.**
+**Status: draft. Every number traces to a committed results file. The literature review is
+now done from the primary sources (`research/literature-review.md`), and it establishes that
+no mechanism claim is available: the one mechanism that survives ablation is described in the
+prior work as existing practice. The contribution claimed here is the artefact and the
+measurements, including four negative results.**
 
 ---
 
@@ -16,10 +19,18 @@ and never less, with the advantage growing monotonically with offered load to +0
 ratio at 1.2. It costs one point of aggregate delivery and twelve points of LOW-class
 delivery, at *lower* control-plane cost than the baseline it beats.
 
-Three results run against our own predictions and we report them as the main contribution of
+The advantage holds and widens with network size: over 50 to 500 nodes with mean degree held
+constant, CRITICAL delivery stays at 0.98-1.00 while the strongest baseline falls from 0.998 to
+0.966, giving 13 wins and no losses across 16 cells. Against a splittable LP relaxation on
+small topologies, the controller's median optimality gap is 1.40%, the best of the five
+algorithms compared, over 13,200 placements in which no algorithm exceeds the bound.
+
+Four results run against our own predictions and we report them as the main contribution of
 the study rather than as caveats. First, an ablation shows that three of the controller's four
-mechanisms are inert: disabling protection, preemption and damping together changes no measured
-outcome, and preemption never fires. Second, under cascading overload every algorithm that
+mechanisms do nothing. Placed deliberately in conditions built to make them act, they act -
+preemption fires in 47% of runs, protection in 16% - and produce zero significant wins across
+36 conditions and three delivery metrics, with a median paired difference of exactly zero.
+Second, under cascading overload every algorithm that
 recovers propagates a deeper cascade and delivers less traffic than one that does not; static
 shortest path, which never reroutes, suffers less than half the cascade depth. A 25,200-run
 sweep over the cascade rule's threshold and dwell time shows this holds in 168 of 168
@@ -28,7 +39,11 @@ that reserves ~5% link headroom eliminates it entirely and delivers 3.7x static 
 path's traffic — but controls show roughly 60% of that gain comes from declining unplaceable
 flows rather than from the headroom itself, and a further 3,360-run test shows the ceiling is
 a net negative outside cascade. We therefore report it as a regime-specific result and reject
-it as a general mechanism.
+it as a general mechanism. Fourth, the literature review finds that the surviving mechanism
+is not novel: FFC (SIGCOMM 2014) describes computing higher-priority traffic first and lower
+priorities on residual capacity as practice already established by B4 and SWAN. What is not
+present in that literature is a released, seeded artefact that measures recovery *per priority
+class*; the closest open harness, YATES, models a single traffic aggregate.
 
 ---
 
@@ -150,15 +165,52 @@ lower-priority victims) and damping (reroute budget). An ablation with each disa
 | ORBIT, restoration only | **0.887** | **0.695** | 0.415 |
 
 Disabling protection, preemption and damping *together* changes no outcome to four decimal
-places. Preemption never fires: median zero per run across every scenario. The entire measured
-advantage comes from priority-ordered constrained restoration alone.
+places. The entire measured advantage comes from priority-ordered constrained restoration
+alone.
+
+That grid could not distinguish "does not help" from "was never reached", because it held
+conditions under which none of the three can act: preemption is attempted only when no path
+has residual capacity, which is routine on a ring and rare on a Waxman graph; damping binds
+only after repeated reroutes, which a single failure does not produce. A second experiment
+(`a11-mechanisms`, 6,480 runs) supplied those conditions — four families including ring, loads
+to 2.0, and cascading failures — and instrumented how often each mechanism fires.
+
+**They fire.** Preemption in 506 of 1,080 runs (2,024 preemptions, 1,023 of them on ring);
+protection in 175 of 1,080 (248 backup activations). Disabling them changes the outcome of 8%
+to 31% of individual runs.
+
+**And it makes no difference.** Paired Wilcoxon with Holm correction, across all 36 cells:
+
+| mechanism disabled | `pdr_critical` | `pdr` | `pdr_low` |
+|---|---|---|---|
+| protection (M1) | 0 wins / 0 losses | 0 / 0 | 0 / 0 |
+| preemption (M3) | 0 wins / 0 losses | 0 / 0 | 0 / 0 |
+| damping (M4) | 0 wins / 0 losses | 0 / 0 | 0 / 0 |
+| all three | 0 wins / 0 losses | 0 / 0 | 0 / 0 |
+
+Median paired difference is exactly zero in all twelve comparisons; the smallest Holm-adjusted
+p is 0.87. Among the 506 runs where preemption fired, 424 are bit-identical to the same run
+without it, and the remainder are symmetric about zero (worst -0.110, best +0.071). The
+mechanism is noise, not signal.
+
+Preemption cannot help in this model because CRITICAL is starved only by partition or by a
+single flow's demand exceeding a link's capacity, and evicting a lower-priority victim fixes
+neither; where it does fire, CRITICAL is already at 0.998–0.999. Protection cannot help
+because the controller recomputes the entire routing state in the tick it learns of a failure,
+so there is no interval in which a precomputed backup is available and recomputation is not.
+That is not what IP-FRR is — RFC 5714's value is *local* repair before the control plane
+knows anything — and this model has no local-repair actor. **M1 is less refuted than
+inexpressible here**, which is a different and more useful statement.
+
+Against criteria fixed before the run — keep a mechanism if it wins CRITICAL delivery in at
+least a quarter of cells with no significant reversals — all three are removed from the
+contribution claim. The code is retained behind its ablation switches so the negative result
+stays reproducible, not because it is expected to pay off later.
 
 The claim this study can defend is therefore narrower than the design intended: **priority-ordered
 constrained restoration outperforms priority-blind constrained restoration under capacity
-shortage**. It does not require the word "integration", and three quarters of the design are
-currently unsupported. They are retained behind ablation switches because they may matter
-under conditions not tested — tighter capacity, faster failure arrival — but that is a
-hypothesis, not a result.
+shortage**. It does not require the word "integration". And §6 records that even this
+mechanism is not novel: it is what B4, SWAN and FFC already do.
 
 ### 4.5 Under cascading overload, recovery is harmful
 
@@ -235,32 +287,77 @@ of differing difficulty allowed gains in a few easy cells to mask losses in many
   identically to every algorithm, so it cannot bias a comparison; it can shift absolute latency.
 * **The cascade rule is an assumption.** The sweep rules out sensitivity to its parameters, not
   to its form. A model where overload degrades capacity gradually might behave differently.
-* **Synthetic topologies only**, 60 nodes. Sizes 250 and 500 are supported by the code and are
-  not claimed. No real ISP topology was used.
+* **Synthetic topologies only.** Sizes to 500 nodes are benchmarked (`a10-scale`), but no real
+  ISP topology from the Internet Topology Zoo has been used. The Waxman family also required a
+  density correction to be scaled at all: at fixed alpha and beta its mean degree runs from 1.8
+  at 10 nodes to 44 at 500, so the size sweep pins mean degree at 4 and matches per-flow demand
+  to link capacity. Results at 500 nodes describe a sparse synthetic graph, not a dense one.
 * **Time-to-restore could not be evaluated.** Critical traffic recovers to ~80% of its
   pre-failure rate and stops, so the 95% criterion is unreachable and ~70% of runs censor. The
   hypothesis was measuring an incomplete recovery, not a slow one.
 * **Distributed convergence is modelled from a single vantage point**, not per-router.
-* **No optimality bound at scale.** An LP relaxation is implemented and validated on small
-  topologies (2.4% gap on one 12-node case) but not swept.
+* **No optimality bound at scale.** The LP relaxation is now swept over 13,200 placements, but
+  only on 9- to 15-node topologies, because the model has |F| x |E| columns. ORBIT's median gap
+  there is 1.40%, the smallest of the five algorithms, and no algorithm exceeds the bound
+  anywhere. Nothing bounds optimality at 100 nodes or above. The relaxation is splittable, so
+  the reported gap over-states the true distance from the unsplittable optimum.
+* **Control-plane timings are contention-sensitive.** The grids run 18 workers on 20 cores,
+  which inflates wall-clock control timings roughly tenfold. Absolute per-recompute figures
+  come from a separate single-threaded driver; the grids are used only to compare algorithms
+  against each other, where the inflation is common.
 * **Two defects were found in the controller after the first benchmark run**, both by the
   dashboard and by a precondition guard rather than by the 300-test suite. Both penalised
   ORBIT, and correcting them reversed a published conclusion. Results were retracted and
   regenerated. This is a reason to treat the numbers as provisional pending independent check.
 
-## 6. Positioning — NOT YET DONE
+## 6. Positioning
 
-ORBIT's mechanisms derive from IP Fast Reroute (RFC 5286), CSPF and MIRA, RSVP-TE preemption
-(RFC 3209) and BGP route flap damping (RFC 2439). **None is novel and we make no novelty
-claim.** Establishing what is and is not already studied requires the literature review, which
-has not been carried out. Until it is, this document claims only to be a measurement study with
-a reproducible artefact, and the positioning table in `research/literature-review.md` is empty
-by design rather than by oversight.
+The literature review (`research/literature-review.md`) was carried out from the primary
+sources: MIRA (JSAC 2000), B4 and SWAN (SIGCOMM 2013), FFC (SIGCOMM 2014), YATES (SOSR 2018),
+and the RFCs each mechanism derives from. It settles the contribution claim, and it settles it
+downward.
 
-The most defensible contribution available is the harness itself: a laptop-runnable, seeded,
-fully reproducible comparison in which every figure regenerates from committed raw data. The
-systems it compares against were evaluated on proprietary production networks with unreleased
-code.
+**No mechanism claim is available.** ORBIT's surviving mechanism, after the ablation, is
+priority-ordered constrained routing on residual capacity. FFC §5.1 describes exactly this —
+compute the higher-priority traffic first, compute lower priorities on what is left — and
+states that the "cascading computation is already done to support multiple priorities",
+citing B4 and SWAN. It was production practice in 2013. Nor is the allocator novel: strict
+priority between classes with max-min fairness within a class is SWAN's policy. Nor is the
+utilisation ceiling this study tested and rejected: SWAN reserves 10% "scratch capacity" on
+every link, arriving at the same order of magnitude for a different purpose (congestion-free
+updates rather than cascade suppression).
+
+**The prior work also anticipates two of our findings.** FFC's multi-priority headline —
+protect high-priority traffic from almost all loss at negligible aggregate throughput cost —
+has the same shape as our H1/H3 result, obtained four years earlier by a proactive method with
+a formal guarantee, on production traffic and fault logs. And the IP Fast Reroute Framework
+states that repair paths may push excessive traffic onto a link and cause congestion discard,
+that this reduces the effectiveness of IPFRR, and that mechanisms to distribute repaired
+traffic are therefore desirable — while placing that concern out of its own scope. Our cascade
+result quantifies an effect the framework named and declined to address.
+
+**What is not in this literature is a released artefact that measures recovery per priority
+class.** MIRA, B4, SWAN and FFC published no code; each was evaluated on a proprietary network
+against a single incumbent. YATES (SOSR 2018) is open, more mature as TE infrastructure, and
+has a failure model including SRLGs — and it models a single traffic aggregate, with no
+priority class anywhere in it. The intersection of "priority-aware" and "reproducible" is
+empty in this set:
+
+| | capacity-aware | priority-aware | multi-failure | public artefact |
+|---|---|---|---|---|
+| LFA / IP-FRR | no, out of scope | no | single | n/a |
+| MIRA (2000) | yes | no | one link cut | no |
+| B4 (2013) | yes | 3 classes | yes | no |
+| SWAN (2013) | yes | 3 classes + max-min | yes | no |
+| FFC (2014) | yes | per-class protection | guaranteed to k | no |
+| YATES (2018) | yes | **no** | yes, incl. SRLG | **yes** |
+| **this work** | yes | 4 classes | yes, incl. cascade | **yes** |
+
+The contribution is therefore stated as: **an open, seeded, laptop-runnable harness for
+comparing recovery algorithms per priority class under a swept failure catalogue, and the
+measurements it produces — including four negative results that the prior work's evaluation
+method could not have surfaced.** A production paper has no incentive to report that a quarter
+of its own design does nothing; this one does, with the firing counts alongside.
 
 ## 7. Reproducing
 

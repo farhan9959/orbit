@@ -254,3 +254,57 @@ the artifact column, and that is the entire distance between it and the prior wo
 2. **Mechanism ablation.** None of these papers disables a component of its own system and
    reports that it made no difference. ORBIT's ablation result is a kind of evidence the
    prior work does not produce, because production papers have no incentive to.
+
+---
+
+## 5. The contribution claim, after the measurements
+
+The ablation is what forces this section to be short. `a11-mechanisms` (6,480 runs) put M1,
+M3 and M4 into the conditions designed to make them fire — they fired, in 16% and 47% of runs
+respectively — and returned **0 wins and 0 losses across all 36 cells** on every delivery
+metric. All three are out of the claim. What remains of ORBIT's mechanism is M2: priority-
+ordered constrained restoration on residual capacity.
+
+**And M2 is not novel.** FFC §5.1 describes computing higher-priority traffic first and lower
+priorities on residual capacity, and states that this "cascading computation is already done
+to support multiple priorities", citing B4 and SWAN. That sentence rules out any mechanism
+claim this project could have made.
+
+So the contribution is not an algorithm. Stated at the width the evidence supports:
+
+> **An open, seeded, laptop-runnable harness for comparing recovery algorithms per priority
+> class under a swept failure catalogue, and the measurements it produces — including four
+> negative results that the prior work's evaluation methods could not have surfaced.**
+
+Each half against the literature:
+
+**The harness.** YATES is the closest existing artifact and is more mature as TE
+infrastructure — real topologies, an SDN backend, hardware validation. It models a single
+traffic aggregate. ORBIT's harness treats the priority class as a first-class object: per-class
+demand, strict-priority allocation with max-min within, per-class delivery ratio, per-class
+recovery time, preemption accounting. B4, SWAN and FFC all model priority classes and none
+released an artifact. **The intersection of "priority-aware" and "reproducible" is empty in
+this set, and that is the entire gap.** It is a narrow claim and it is defensible.
+
+**The measurements.** Four results here are not in the prior work, and the reason is
+structural rather than accidental — a paper evaluating a production system has no incentive to
+publish that a quarter of its own design does nothing:
+
+1. **Three of four mechanisms are inert**, under conditions built to favour them, with the
+   ablation and the firing counts both published.
+2. **Recovery deepens cascades.** Static SPF suffers less than half the cascade depth of every
+   recovering algorithm, robust across 168 parameter cells. RFC 5714 names this effect —
+   repair paths causing congestion discard — and explicitly places it out of scope. This
+   quantifies what the framework declined to address, inside a stated model.
+3. **A utilisation ceiling eliminates the modelled cascade but is a net negative elsewhere**,
+   and roughly 60% of its benefit comes from declining unplaceable flows rather than from the
+   headroom. The headroom itself is SWAN's scratch capacity arriving at the same 5-10% figure
+   for an unrelated reason, which is at least corroborating.
+4. **The advantage grows with network size.** Over 50-500 nodes with mean degree pinned,
+   ORBIT's CRITICAL delivery stays at 0.98-1.00 while CSPF falls from 0.998 to 0.966 — 13 wins,
+   0 losses across 16 cells. None of MIRA, SWAN or FFC reports a size sweep at all.
+
+**What must not be claimed**, restating §4: not the mechanism, not the allocator, not the
+headroom idea, not "protects high-priority traffic cheaply" as a discovery — FFC published
+that in 2014 with a guarantee, on production data, four years before this project's harness
+had an equivalent in YATES.

@@ -136,8 +136,10 @@ both), consistent with it depending on capacity decisions rather than on early k
 
 ## Other measured results
 
-* **Preemption never fires** — median 0 per run. The ablation below confirms M2 carries the
-  entire result.
+* **Preemption never fires in this grid** — median 0 per run. **Corrected by A11:** the median
+  is 0 but the mechanism fires in 19 of these 120 runs, and in 47% of runs once ring
+  topologies and higher loads are included. "Never" was the wrong word; "fires and achieves
+  nothing" is the measured claim. See the A11 section.
 * **Static SPF is a genuine floor**, not a strawman: 0.685 CRITICAL against 0.843 for the
   same algorithm with reconvergence enabled.
 
@@ -169,7 +171,9 @@ This is a negative result for three quarters of the design:
   tick. Precomputed backups buy nothing when recomputation is not the bottleneck.
 * **M3 preemption never fires** — median 0 preemptions per run, across every scenario. The
   restriction to strictly-lower-priority victims plus the best-effort fallback means the
-  situation preemption exists for essentially does not arise.
+  situation preemption exists for essentially does not arise. **Superseded by A11:** in
+  conditions this grid did not contain (ring topologies, loads to 2.0, cascading) preemption
+  fires in 47% of runs and 2,024 times in total — and still produces 0 wins in 36 cells.
 * **M4 damping** changes no outcome, though it is also not costing anything.
 
 The only non-M2 mechanism that matters is the **best-effort fallback**, which is not one of
@@ -449,18 +453,235 @@ Every clause is measured, and the cost clause is stated as prominently as the be
 
 ## What must change before any of this is published
 
-1. **The contribution claim must be rewritten.** The ablation shows M1, M3 and M4 are inert.
-   ORBIT is one mechanism, not four. The utilisation ceiling was tested as a fifth candidate
-   and rejected: decisive under cascade, a net negative across the headline grid.
+1. ~~**The contribution claim must be rewritten.**~~ **Done, and it went further than
+   expected.** A11 (6,480 runs) put M1, M3 and M4 into conditions built to make them fire;
+   they fired, and returned 0 wins in 36 cells. All three are out of the claim. The
+   utilisation ceiling was tested as a fifth candidate and rejected. And the literature review
+   then found that the one surviving mechanism is not novel either: FFC §5.1 calls
+   priority-ordered computation on residual capacity existing practice, citing B4 and SWAN.
+   The contribution is the harness and the measurements — see `research/literature-review.md`
+   §5.
 2. **The cascade result is robust to its parameters but rests on one model form.** The sweep
    (25,200 runs, 168 cells) rules out threshold and dwell sensitivity. It does not rule out
    sensitivity to the shape of the cascade rule itself, and no real-network claim may be made
    from it.
-3. **The LP gap is implemented but not swept.** It is validated (no algorithm exceeds the
-   bound) and measured at 2.4% on one 12-node case; a proper sweep over small topologies has
-   not been run.
-4. **Sizes 250 and 500 were not benchmarked** and are not claimed.
+3. ~~**The LP gap is implemented but not swept.**~~ **Done.** `a10-optimality`, 13,200
+   placements: ORBIT's median gap is 1.40%, the best of the five algorithms, and no algorithm
+   exceeds the bound anywhere.
+4. ~~**Sizes 250 and 500 were not benchmarked.**~~ **Done.** `a10-scale`, 2,400 runs to 500
+   nodes: 13 wins / 0 losses against CSPF on CRITICAL delivery, and the advantage grows with
+   size. Two methodology defects had to be fixed first; see the A10 section.
 6. **Two defects were found in ORBIT's placement path after the first grid run**, both by the
    dashboard and by a precondition guard rather than by the test suite. Regression tests now
    cover both, but the episode is a reason to treat these numbers as provisional until an
    independent check exists.
+
+---
+
+# A10 / A11 — scale, mechanisms and the optimality gap
+
+Four experiments run after the A9 series, all with clean manifests. They close the last three
+research gaps: the scale claim, the M1/M3/M4 verdict, and the LP sweep.
+
+## Scale: 50 to 500 nodes
+
+`a10-scale`, **2,400 runs**, 91 minutes, manifest `dirty: false`. Waxman and scale-free x
+{50, 100, 250, 500} nodes x {critical_link, random_node_30} x 5 algorithms x 30 paired trials.
+
+### The sweep could not be run as pre-registered, and why
+
+`docs/05-methodology.md` B1 specifies a Waxman scale sweep across all sizes. Run literally, it
+measures the wrong thing twice over:
+
+1. **Waxman's density is not scale-invariant.** At fixed alpha and beta the per-pair edge
+   probability does not fall with n, so the edge count grows as O(n^2). Measured mean
+   out-degree: **1.8 at 10 nodes, 3.8 at 60, 7.6 at 100, 21.3 at 250, 44.0 at 500.** A sweep on
+   that parameterisation varies density and size together and can attribute a result to
+   neither.
+2. **`offered_load` does not fix per-flow demand.** It fixes total demand as a fraction of
+   network capacity. With capacity growing quadratically and the flow count fixed, mean
+   per-flow demand reaches **605 Mbps against 100 Mbps links** at Waxman-500. No single-path
+   algorithm can serve any flow in full, and every algorithm collapses onto the same
+   capacity-limited floor - measured PDR 0.10 for spf-static, cspf and orbit alike, identical
+   to three decimals.
+
+Both were fixed by holding constant what a size sweep has to hold constant: mean degree pinned
+at 4.0 via `waxman_target_degree`, and flow counts chosen per (family, size) so mean per-flow
+demand is 0.353 x link capacity, the 60-node headline value. The generator change consumes the
+RNG in the identical order, so every earlier result is untouched; a test asserts it.
+
+### ORBIT's advantage grows with size
+
+Median CRITICAL delivery, critical-link failure, Waxman:
+
+| nodes | spf-static | spf-reconverge | ecmp | cspf | **orbit** |
+|---|---|---|---|---|---|
+| 50 | 0.925 | 0.966 | 0.994 | 0.998 | **0.999** |
+| 100 | 0.879 | 0.921 | 0.960 | 0.981 | **0.999** |
+| 250 | 0.882 | 0.896 | 0.943 | 0.982 | **0.996** |
+| 500 | 0.859 | 0.870 | 0.934 | 0.966 | **0.981** |
+
+Scale-free behaves the same way, ORBIT reaching 1.000 at 500 nodes against CSPF's 0.992.
+
+**ORBIT stays flat while every baseline degrades.** Paired against CSPF over all 16 cells:
+**13 wins, 0 losses** on `pdr_critical`. The two non-wins are the 50-node critical-link cells
+where both algorithms already sit at 0.999 and there is nothing left to win. The median paired
+difference rises with size - +0.000 at 50 nodes, +0.010 at 100, +0.006 at 250, +0.011 at 500
+on Waxman - and the effect size reaches *medium* to *large* at 100 nodes and above.
+
+On overall PDR the result is **3 wins / 3 losses**, and the split is informative: every loss is
+a Waxman critical-link cell (-0.010 to -0.013, small effect) and every win is a
+`random_node_30` cell at 250 or 500 nodes (+0.004 to +0.010). **At scale, under node failures,
+ORBIT stops paying the aggregate-delivery cost it pays at 60 nodes.**
+
+### Cost, and a wrong conclusion avoided
+
+`a10-control-cost`, 40 single-threaded measurements, manifest `dirty: false`. Median
+milliseconds for one full recompute:
+
+| nodes | spf-reconverge | ecmp | cspf | orbit |
+|---|---|---|---|---|
+| 50 | 5.2 | 33.5 | 25.8 | 28.4 |
+| 100 | 18.0 | 88.4 | 63.1 | 65.7 |
+| 250 | 104.7 | 474.7 | 353.9 | 391.8 |
+| 500 | 422.4 | 1806.4 | 1331.8 | 1394.5 |
+
+Cost grows as roughly O(n^1.7) to O(n^2.0), consistent with one Dijkstra per flow while the
+flow count grows linearly. **ORBIT costs within ~7% of CSPF and consistently less than ECMP**,
+so the A8 finding that ORBIT is not the expensive option holds at every size tested.
+
+**N4 ("recomputation under 100 ms at 100 nodes") is met: 65.7 ms on Waxman, 72.7 ms on
+scale-free.** The curve also shows where it stops being met, between 100 and 250 nodes. A run
+of 100 nodes, 200 flows and 60 s of simulated time completes in 6.0 s against N2's 30 s budget.
+
+**A wrong conclusion was nearly published here.** `a10-scale`'s own `control_seconds` column
+implies 460 ms per recompute at 100 nodes, which would fail N4 by fivefold. That number is an
+artefact of running 18 workers on 20 cores: contention inflates wall-clock control timings
+roughly tenfold. The inflation is common to every algorithm, so the grid's *comparison* between
+algorithms is unaffected, but its absolute numbers cannot carry an absolute claim. Hence the
+separate single-threaded driver, and a note in `experiments/runner.py`.
+
+---
+
+## A11 - M1, M3 and M4 fire, and change nothing
+
+`a11-mechanisms`, **6,480 runs**, manifest `dirty: false`. Four families **including ring**,
+offered load {0.9, 1.5, 2.0}, failures {critical_link, cascading, random_node_30}, six
+algorithms, 30 paired trials. 36 cells.
+
+### Why the earlier ablation could not settle this
+
+`a8-ablation` reported all three inert, but it held conditions under which none of them *can*
+act, so it could not distinguish "does not help" from "was never reached":
+
+* **M3 preemption** is attempted only when no path has residual capacity for the flow. On
+  Waxman and scale-free that is rare; on a **ring** - degree two, one path per pair - it is
+  routine. The old grid contained neither ring nor grid.
+* **M4 damping** binds only after a flow has rerouted three times inside a 50-tick window. A
+  single injected failure reroutes most flows once. Churn requires **cascading**, which the old
+  ablation grid did not include.
+* **M1 protection** needs a case where the precomputed backup is live and the recomputed path
+  is not equivalent.
+
+A11 supplies all three conditions, and `backup_activations` was added to the metrics so that
+firing and helping could be told apart.
+
+### They fired
+
+| mechanism | runs where it fired | total firings |
+|---|---|---|
+| M1 protection | 175 / 1080 (16.2%) | 248 backup activations |
+| M3 preemption | 506 / 1080 (46.9%) | 2,024 preemptions |
+
+Preemption concentrates exactly where predicted: 1,023 of the 2,024 on ring against 265 on
+Waxman. This **corrects the A8 statement that "preemption never fires"** - it fires in nearly
+half of all runs. The median was zero, which is a different claim.
+
+Per trial, the mechanisms change real outcomes:
+
+| variant | runs identical to full ORBIT |
+|---|---|
+| M1 off | 994 / 1080 (92.0%) |
+| M3 off | 742 / 1080 (68.7%) |
+| M4 off | 990 / 1080 (91.7%) |
+| M1+M3+M4 off | 682 / 1080 (63.1%) |
+
+### And none of it makes a difference
+
+Paired Wilcoxon, Holm-adjusted, full ORBIT against each ablation, over all 36 cells:
+
+| mechanism | `pdr_critical` | `pdr` | `pdr_low` |
+|---|---|---|---|
+| M1 protection | **0 wins / 0 losses** | 0 / 0 | 0 / 0 |
+| M3 preemption | **0 wins / 0 losses** | 0 / 0 | 0 / 0 |
+| M4 damping | **0 wins / 0 losses** | 0 / 0 | 0 / 0 |
+| M1+M3+M4 together | **0 wins / 0 losses** | 0 / 0 | 0 / 0 |
+
+The median paired difference is exactly 0.00000 in every one of those twelve comparisons, and
+the smallest Holm-adjusted p across all of them is 0.87.
+
+The clearest single statement is about preemption. Restricting to the 506 runs where it
+actually fired, against the identical run with preemption disabled: **424 are identical, the
+median change in CRITICAL delivery is exactly zero, and the tails are symmetric - worst
+-0.110, best +0.071.** Preemption moves individual runs in both directions and nothing on
+average. It is noise, not signal.
+
+**Why preemption cannot help here.** It exists so a high-priority flow can take capacity from
+a lower-priority one. That needs CRITICAL to be starved *and* a path to exist once victims are
+evicted. In this model CRITICAL is starved only when no path exists at all (partition) or when
+a single flow's demand exceeds a link's capacity, and preemption fixes neither. Where it does
+fire, CRITICAL is already at 0.998-0.999 and there is nothing to buy.
+
+**Why protection cannot help here.** The controller recomputes the whole routing state in the
+tick it learns of a failure, and the protection branch runs immediately before restoration
+would find a path anyway. There is no interval in which a precomputed backup is available and
+recomputation is not. That is not what IP-FRR is: RFC 5714's value comes from **local** repair
+at the node adjacent to the failure, tens of milliseconds *before* the control plane knows
+anything. This model has no local-repair actor - the detector gates all knowledge and the
+central controller is the only thing that places routes. **M1 is not refuted here so much as
+inexpressible here**, and that distinction is the honest one to record.
+
+### Verdict, against criteria fixed before the run
+
+The spec required a mechanism to win `pdr_critical` in at least a quarter of the cells with no
+significant reversals. All three won zero cells. Per criterion C, **M1, M3 and M4 are removed
+from the contribution claim.**
+
+The code stays, behind its existing configuration flags. Deleting it would make this result
+unreproducible, and a measured negative is worth being able to re-derive.
+
+**ORBIT is one mechanism: priority-ordered constrained restoration (M2), plus a best-effort
+fallback that is not one of the four documented mechanisms and is the only non-M2 component
+the measurements support.** `research/literature-review.md` §5 records that M2 is itself
+described as existing practice by FFC §5.1, citing B4 and SWAN.
+
+---
+
+## The LP optimality gap, swept
+
+`a10-optimality`, **13,200 placements**, manifest `dirty: false`. Four families x
+{9, 12, 15} nodes x four loads x {none, critical_link} x 5 algorithms x 30 trials. Each
+algorithm places flows on the post-failure graph; the LP solves the splittable relaxation on
+that same graph, so the two face an identical world.
+
+**No algorithm exceeds the bound in any of the 13,200 cells.** That is the check that matters:
+the relaxation is an upper bound on the unsplittable optimum, so exceeding it would mean the
+bound is broken, not that the heuristic is good.
+
+| algorithm | median gap | mean | at load 0.5 | at load 1.2 |
+|---|---|---|---|---|
+| spf-static | 3.65% | 9.75% | 0.46% | 9.35% |
+| spf-reconverge | 3.65% | 9.75% | 0.46% | 9.35% |
+| ecmp | 2.74% | 8.28% | 0.27% | 8.24% |
+| cspf | 2.78% | 8.71% | 0.15% | 9.04% |
+| **orbit** | **1.40%** | **6.87%** | **0.08%** | **6.71%** |
+
+ORBIT is closest to the bound at every load and in every family, and the margin widens with
+load. The gap is **conservative**: the relaxation permits arbitrary splitting, so part of the
+1.4% is looseness in the bound rather than weakness in the heuristic. The earlier single
+12-node case reported 2.4%; the swept figure is 1.40% over 2,640 ORBIT placements.
+
+One caveat worth stating: on Waxman at these sizes all five algorithms return an identical
+4.68% gap. At 9-15 nodes a Waxman graph often admits only one sensible path per pair, so the
+algorithms are not being distinguished there at all. The separation comes from grid and
+scale-free.

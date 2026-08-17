@@ -26,7 +26,9 @@ sweep over the cascade rule's threshold and dwell time shows this holds in 168 o
 parameter cells with no reversals. Third, the cascade is nonetheless avoidable: a controller
 that reserves ~5% link headroom eliminates it entirely and delivers 3.7x static shortest
 path's traffic — but controls show roughly 60% of that gain comes from declining unplaceable
-flows rather than from the headroom itself.
+flows rather than from the headroom itself, and a further 3,360-run test shows the ceiling is
+a net negative outside cascade. We therefore report it as a regime-specific result and reject
+it as a general mechanism.
 
 ---
 

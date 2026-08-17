@@ -209,6 +209,7 @@ def waxman(
     seed: int,
     alpha: float = 0.4,
     beta: float = 0.2,
+    target_degree: float | None = None,
     capacity_mbps: float = DEFAULT_CAPACITY_MBPS,
     prop_delay_ms: float = DEFAULT_PROP_DELAY_MS,
 ) -> Topology:
@@ -221,6 +222,15 @@ def waxman(
     where `d` is Euclidean distance and `L` is the largest distance between any two nodes.
     `alpha` raises the overall edge density; `beta` raises the share of long edges.
 
+    **Density and scale.** With `alpha` and `beta` held fixed, the per-pair probability does
+    not fall with `node_count`, so the edge count grows as O(n^2): measured average
+    out-degree runs 1.8 at 10 nodes, 3.8 at 60, and 44 at 500. A size sweep on the fixed
+    parameterisation therefore varies density and size together and cannot attribute a
+    result to either. `target_degree` fixes that: `alpha` is rescaled so the *expected*
+    undirected edge count is `target_degree * node_count / 2`, holding mean degree constant
+    while size varies. It changes nothing when left at None, and the RNG is consumed in the
+    identical order either way, so every existing result is unaffected.
+
     Propagation delay is `prop_delay_ms * d(u, v)`, so distance is visible to any
     latency-aware algorithm. This is the only family here with non-uniform delay, and it is
     the reason Waxman is used for the scale and load sweeps in docs/05-methodology.md B1.
@@ -232,6 +242,8 @@ def waxman(
         raise ValidationError(f"waxman: alpha must be in (0, 1], got {alpha!r}")
     if beta <= 0.0:
         raise ValidationError(f"waxman: beta must be > 0, got {beta!r}")
+    if target_degree is not None and target_degree <= 0.0:
+        raise ValidationError(f"waxman: target_degree must be > 0, got {target_degree!r}")
 
     rng = rng_for(seed, "topology.waxman")
     points = [(rng.random(), rng.random()) for _ in range(node_count)]
@@ -246,11 +258,12 @@ def waxman(
         # is a division by zero in a benchmark that has already been running for an hour.
         longest = 1.0
 
-    edges = {
-        (a, b)
-        for a, b in pairs
-        if rng.random() < alpha * math.exp(-distance(a, b) / (beta * longest))
-    }
+    decay = {(a, b): math.exp(-distance(a, b) / (beta * longest)) for a, b in pairs}
+    if target_degree is not None:
+        total = sum(decay.values())
+        alpha = min(1.0, target_degree * node_count / 2.0 / total) if total > 0.0 else 1.0
+
+    edges = {(a, b) for a, b in pairs if rng.random() < alpha * decay[(a, b)]}
     edges = _repair_connectivity(node_count, edges)
     return _build(
         node_count,

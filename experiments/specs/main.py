@@ -181,3 +181,48 @@ A9_CEILING_COST = ExperimentSpec(
     algorithms=("cspf", "orbit", "orbit-ceiling-0.95", "orbit-ceiling-0.9"),
     trials=30,
 )
+
+
+# The scale sweep (docs/05-methodology.md B1). Two things have to be held constant for a size
+# sweep to measure size:
+#
+# 1. **Mean degree.** Waxman at fixed alpha/beta has O(n^2) edges - measured mean out-degree
+#    1.8 at 10 nodes, 3.8 at 60, 44 at 500 - so an uncorrected sweep varies density and size
+#    together. `waxman_target_degree=4.0` pins it at the value the 60-node headline grid
+#    happens to have. Barabasi-Albert already has constant degree by construction.
+# 2. **Per-flow demand relative to link capacity.** `offered_load` fixes total demand as a
+#    fraction of network capacity, not per-flow demand, so a fixed flow count on a network
+#    whose capacity grows makes each flow larger. Past one link's capacity a single-path
+#    algorithm cannot serve any flow in full and every algorithm collapses to the same
+#    capacity-limited floor - measured 605 Mbps per flow on 100 Mbps links at Waxman-500,
+#    PDR 0.10 for every algorithm. Flow counts below are chosen per (family, size) so mean
+#    per-flow demand is 0.353 x link capacity, the 60-node headline value.
+SCALE_FLOWS: dict[tuple[TopologyFamily, int], int] = {
+    (TopologyFamily.WAXMAN, 50): 151,
+    (TopologyFamily.WAXMAN, 100): 204,
+    (TopologyFamily.WAXMAN, 250): 458,
+    (TopologyFamily.WAXMAN, 500): 852,
+    (TopologyFamily.SCALE_FREE, 50): 140,
+    (TopologyFamily.SCALE_FREE, 100): 242,
+    (TopologyFamily.SCALE_FREE, 250): 607,
+    (TopologyFamily.SCALE_FREE, 500): 1191,
+}
+
+A10_SCALE = ExperimentSpec(
+    name="a10-scale",
+    scenarios=tuple(
+        ScenarioSpec(
+            family=family,
+            nodes=nodes,
+            flows=SCALE_FLOWS[(family, nodes)],
+            offered_load=0.7,
+            ticks=150,
+            failure=failure,
+            waxman_target_degree=4.0,
+        )
+        for family in (TopologyFamily.WAXMAN, TopologyFamily.SCALE_FREE)
+        for nodes in (50, 100, 250, 500)
+        for failure in (FailureScenario.CRITICAL_LINK, FailureScenario.RANDOM_NODE_30)
+    ),
+    trials=30,
+)

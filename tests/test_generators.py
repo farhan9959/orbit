@@ -169,6 +169,20 @@ def test_waxman_alpha_controls_edge_density() -> None:
     assert len(dense.links) > len(sparse.links)
 
 
+def test_waxman_target_degree_holds_density_constant_as_size_grows() -> None:
+    """Without this the scale sweep measures density, not size: at fixed alpha the mean
+    out-degree runs 1.8 at 10 nodes and 44 at 500."""
+    uncorrected = [len(waxman(n, seed=5).links) / n for n in (60, 240)]
+    corrected = [len(waxman(n, seed=5, target_degree=4.0).links) / n for n in (60, 240)]
+    assert uncorrected[1] > 3 * uncorrected[0]
+    assert all(3.0 < degree < 5.0 for degree in corrected)
+
+
+def test_waxman_target_degree_leaves_the_default_generator_untouched() -> None:
+    """Rescaling alpha must not shift the RNG stream, or every committed result moves."""
+    assert sorted(waxman(50, seed=9).links) == sorted(waxman(50, seed=9, target_degree=None).links)
+
+
 def test_waxman_is_connected_even_when_alpha_is_tiny() -> None:
     """With alpha this low the raw graph is almost certainly fragmented, so this exercises
     the connectivity repair rather than the generator's luck."""
@@ -183,6 +197,8 @@ def test_waxman_is_connected_even_when_alpha_is_tiny() -> None:
         ({"alpha": 1.5}, "alpha"),
         ({"beta": 0.0}, "beta"),
         ({"beta": -1.0}, "beta"),
+        ({"target_degree": 0.0}, "target_degree"),
+        ({"target_degree": -2.0}, "target_degree"),
     ],
 )
 def test_waxman_rejects_out_of_range_parameters(kwargs: dict[str, float], message: str) -> None:

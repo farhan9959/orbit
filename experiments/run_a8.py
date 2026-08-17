@@ -17,6 +17,7 @@ from experiments.specs.main import (
     A9_CASCADE_SWEEP,
     A9_CEILING,
     A9_CEILING_COST,
+    A10_SCALE,
     SMOKE,
 )
 
@@ -30,6 +31,7 @@ SPECS = {
     "cascade-sweep": A9_CASCADE_SWEEP,
     "ceiling": A9_CEILING,
     "ceiling-cost": A9_CEILING_COST,
+    "scale": A10_SCALE,
 }
 
 

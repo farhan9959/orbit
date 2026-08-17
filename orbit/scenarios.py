@@ -68,6 +68,13 @@ class ScenarioSpec:
     cascade_threshold: float = 0.98
     cascade_dwell_ticks: int = 3
     cascade_max_failures: int = 10_000
+    waxman_target_degree: float | None = None
+    """Hold Waxman mean degree constant while `nodes` varies (see `generators.waxman`).
+
+    Only meaningful for the Waxman family. Left None the generator keeps its fixed
+    alpha/beta, whose edge count grows as O(n^2); a size sweep on that parameterisation
+    confounds size with density.
+    """
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "family", TopologyFamily(self.family))
@@ -85,6 +92,8 @@ class ScenarioSpec:
             raise ValidationError("ScenarioSpec: cascade_threshold must be in (0, 1]")
         if self.cascade_dwell_ticks < 1:
             raise ValidationError("ScenarioSpec: cascade_dwell_ticks must be >= 1")
+        if self.waxman_target_degree is not None and self.waxman_target_degree <= 0.0:
+            raise ValidationError("ScenarioSpec: waxman_target_degree must be > 0")
 
     @property
     def seed_key(self) -> str:
@@ -106,9 +115,11 @@ class ScenarioSpec:
     @property
     def id(self) -> str:
         base = self.seed_key
-        if (self.cascade_threshold, self.cascade_dwell_ticks) == (0.98, 3):
-            return base
-        return f"{base}-th{self.cascade_threshold}-dw{self.cascade_dwell_ticks}"
+        if (self.cascade_threshold, self.cascade_dwell_ticks) != (0.98, 3):
+            base = f"{base}-th{self.cascade_threshold}-dw{self.cascade_dwell_ticks}"
+        if self.waxman_target_degree is not None:
+            base = f"{base}-deg{self.waxman_target_degree}"
+        return base
 
     def seed_for(self, trial: int) -> int:
         return derive_seed(trial, self.seed_key)
@@ -123,7 +134,12 @@ def build_topology(spec: ScenarioSpec, seed: int) -> Topology:
         return ring(spec.nodes, capacity_mbps=capacity)
     if spec.family is TopologyFamily.SCALE_FREE:
         return barabasi_albert(spec.nodes, seed=seed, capacity_mbps=capacity)
-    return waxman(spec.nodes, seed=seed, capacity_mbps=capacity)
+    return waxman(
+        spec.nodes,
+        seed=seed,
+        target_degree=spec.waxman_target_degree,
+        capacity_mbps=capacity,
+    )
 
 
 def mean_path_hops(topology: Topology, samples: int = 8) -> float:

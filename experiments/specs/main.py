@@ -173,3 +173,11 @@ A9_CEILING = ExperimentSpec(
     ),
     trials=30,
 )
+
+
+A9_CEILING_COST = ExperimentSpec(
+    name="a9-ceiling-cost",
+    scenarios=scenario_grid(FAMILIES, FAILURES, nodes=60, flows=150, offered_load=0.7, ticks=150),
+    algorithms=("cspf", "orbit", "orbit-ceiling-0.95", "orbit-ceiling-0.9"),
+    trials=30,
+)

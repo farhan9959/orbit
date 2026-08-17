@@ -151,3 +151,65 @@ parameter actually moves the outcome is worth more than another unit test.
 A8 is that the hypotheses were written down before the code existed, including H3, which
 predicted ORBIT would *lose* on aggregate throughput. A result that contradicts a
 pre-registered hypothesis is reported as a result, not reframed.
+
+---
+
+## Tier B — API, auth, worker, SSE, observability
+
+**WHAT.** FastAPI over PostgreSQL: scoped repositories, Argon2id sessions with CSRF, a
+job worker, SSE live sessions, structured logging and Prometheus metrics.
+
+**WHY the repository layer is the security control.** Object-level authorization is OWASP's
+number one category and the usual way it breaks is a new handler that forgets the check. So
+ownership is enforced in the data-access layer and **there is no unscoped accessor to call**
+— `for_user(session, principal)` is the only way to reach an owned object, and it applies the
+owner filter before the handler sees anything. A forgetful handler cannot accidentally
+succeed, because the unsafe path does not exist. UUIDv4 keys are defence in depth only;
+the filter is the control. Misses return 404 rather than 403 so the API cannot be used as an
+existence oracle.
+
+**WHY server-side sessions rather than JWTs.** Logout has to genuinely revoke. A signed token
+cannot be un-signed, so revocation needs a denylist, which is a session store wearing a
+disguise. Cookies also make SSE authentication work without putting a token in a query
+string, where it would land in access logs. The cost is CSRF, handled by double-submit —
+an explicit, defensible trade rather than an oversight.
+
+**WHY `FOR UPDATE SKIP LOCKED` instead of a broker.** The queue holds tens of jobs on one
+node. Celery would add a broker, a result backend and a new failure mode to solve a problem
+Postgres already solves in about sixty lines. Several workers can poll the same table without
+blocking each other; `attempts` is incremented on claim so a poison job cannot spin forever.
+
+**WHY deltas are coalesced, not queued.** The publisher keeps *one* pending delta per session
+and merges into it. A slow client therefore sees a lower frame rate, never a growing backlog.
+Queuing would turn a slow reader into unbounded server memory — that is the backpressure
+story and it is the interesting part of the SSE work.
+
+**WHY `/healthz` must not touch the database.** It answers "is this process alive", which is
+what a container healthcheck needs. If it checked Postgres, a brief database blip would make
+the orchestrator kill healthy application containers and turn a small outage into a large
+one. `/readyz` checks the database, because that is what a load balancer should ask.
+
+**TRADEOFFS.**
+
+| Decision | Gained | Given up |
+|---|---|---|
+| Scoped repository | IDOR is structurally impossible, not merely checked | Slightly more ceremony to reach an object |
+| Server-side sessions | Real logout, SSE auth without a querystring token | Must handle CSRF; session table to maintain |
+| Postgres job table | One fewer service, no broker failure mode | No fan-out, no free retry-with-backoff |
+| Coalesced SSE deltas | Bounded memory under a slow client | Client can miss intermediate states |
+| Fixed-window rate limit | No Redis for a single-node deployment | Burst at a window boundary |
+
+**The bug worth remembering.** `Run.seed` overflowed `BIGINT`. `derive_seed` produces an
+*unsigned* 64-bit value and Postgres `BIGINT` is *signed*, so roughly half of all seeds fail
+to insert. The tempting fix — mask the seed into range — would have changed every seed in the
+project and invalidated the committed benchmark results. The column became `NUMERIC(20)`
+instead. **When a value and its container disagree, widen the container unless you are
+certain the value is wrong.**
+
+**HOW I EXPLAIN IT IN AN INTERVIEW.** "The part I would defend hardest is where the
+authorization check lives. It is in the data-access layer, not in the handlers, and there is
+deliberately no way to query an owned table without passing a principal. That matters because
+IDOR almost never comes from someone deciding not to check — it comes from a new endpoint
+added six months later by someone who did not know the check existed. If the unsafe path
+does not exist, that failure cannot happen. The handlers are then free to be boring, which
+is what you want from handlers."

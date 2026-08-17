@@ -139,7 +139,23 @@ precedence) as a policy option. Worth having because "strict priority starves lo
 real critique, and being able to show the WFQ variant answers it with data instead of opinion.
 
 ### Derived metrics per flow, per tick
-- **delivered rate** `a_f` = allocation result (0 if no valid route → `BLACKHOLED`).
+
+> **AMENDED during implementation (A2).** As originally written, this section and
+> `05-methodology.md` A4 contradicted each other: delivered rate was defined as the
+> allocation result with intrinsic loss listed separately, but A4 requires a 100%-loss link
+> to yield `delivered = 0`. Both cannot hold. Resolved toward the methodology:
+>
+> ```
+> allocated_mbps = what the allocator granted   (this is what consumes link capacity)
+> delivered_mbps = allocated_mbps * (1 - intrinsic_loss)   (PDR is computed from this)
+> ```
+>
+> Both numbers are recorded so congestion and medium loss stay distinguishable. Note the
+> asymmetry: capacity is charged against the *allocated* rate, because traffic dropped by a
+> lossy link partway along a path has already occupied the links before it.
+
+- **delivered rate** `a_f` = allocation result (0 if no valid route → `BLACKHOLED`),
+  **reduced by intrinsic path loss — see the amendment above**.
 - **congestive loss** = `(demand - delivered) / demand`.
 - **intrinsic loss** along the path = `1 - Π(1 - loss_rate_e)`.
 - **latency** = `Σ_path (prop_delay_e + queue_delay_e) + Σ_path node processing_delay`.
@@ -175,6 +191,21 @@ actively harmful: shortest-path reconvergence dumps rerouted traffic onto surviv
 links exceed θ, and they fail too. If ORBIT's capacity-aware placement demonstrably reduces
 cascade depth, that is the project's strongest single result — and it will be a *measured* claim
 with a cascade-depth metric, not an assertion.
+
+> **AMENDED after measurement (A9 cascade grid, `research/a8-findings.md`).** It was measured,
+> and the prediction is refuted. ORBIT's median cascade depth is 76 against CSPF's 78.5 and
+> ECMP's 77 — a rounding difference. Capacity-aware placement does **not** reduce cascade
+> depth here.
+>
+> The result runs the other way, and more sharply than expected: **static SPF suffers 31.5,
+> less than half of every recovering algorithm, and delivers the most traffic under cascade**
+> (0.188 CRITICAL against ORBIT's 0.133). Because it never reroutes, it never displaces
+> traffic onto surviving links, so it never trips θ. Every algorithm that recovers makes the
+> cascade worse, and the better it recovers the worse it makes it.
+>
+> Whether this is a real property of cascading overload or an artefact of the θ/dwell model
+> is **currently unknown** and is the most interesting open question in the project. It must
+> not be reported as a finding about real networks until that is settled.
 
 ### Failure detection — the fairness-critical component
 
@@ -266,6 +297,25 @@ under multi-failure and cascading conditions. The contribution is the system + t
 study, not a new algorithm. Any stronger claim requires the literature review to first establish
 that the combination is unstudied — and if it turns out to be studied, the claim gets weakened,
 not the literature ignored.
+
+> **AMENDED after measurement (A9 ablation, `research/a8-findings.md`).** The claim above is
+> no longer supported by this project's own data. Disabling M1, M3 and M4 together changes
+> no measured outcome to four decimal places: restoration-only ORBIT scores 0.8866 CRITICAL,
+> 0.6948 HIGH and 0.4154 overall, identical to the full controller. The entire measured
+> advantage over CSPF comes from **M2 alone**.
+>
+> M1 never helps because M2 finds an equivalent path within the same tick, so precomputed
+> backups buy nothing when recomputation is not the bottleneck. M3 never fires at all —
+> median 0 preemptions per run across every scenario. M4 changes no outcome.
+>
+> The claim this project can actually defend is therefore narrower: **priority-ordered
+> constrained restoration outperforms priority-blind constrained restoration**, under
+> capacity shortage, at lower control-plane cost. It does not need the word "integration".
+>
+> M1, M3 and M4 are retained in the code behind ablation switches because they may matter
+> under conditions not yet tested — tighter capacity, faster failure arrival, or without the
+> best-effort fallback. Until that is measured they are unsupported, and the paper must say
+> so rather than describing four mechanisms as though all four earn their place.
 
 #### Objective function (explicit)
 

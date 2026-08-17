@@ -1,6 +1,12 @@
 name: ci
 on: [push, pull_request]
 
+# Every step here has been executed locally on Windows with the same arguments; what has
+# not been executed is the workflow itself, because this repository has no remote. Steps
+# that were previously wrong and are now fixed: the web job invoked `npm run test` against
+# a package.json with no `test` script, and ran `eslint web` from the repository root where
+# there is no eslint config. See docs/final-audit.md for what is verified and what is not.
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -8,9 +14,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install ruff black mypy
+      - run: pip install ruff black mypy types-PyYAML
       - run: ruff check orbit tests experiments api
       - run: black --check orbit tests experiments api
+      # mypy is strict on orbit/, which now includes the Pydantic-typed topology loader.
+      - run: pip install pydantic pyyaml numpy scipy
       - run: mypy
 
   test:
@@ -26,7 +34,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install -e ".[dev]" fastapi "uvicorn[standard]" sqlalchemy alembic "psycopg[binary]" argon2-cffi pydantic-settings prometheus-client email-validator httpx numpy scipy pandas pyarrow matplotlib networkx
+      - run: >-
+          pip install -e ".[dev,spec,lp]" fastapi "uvicorn[standard]" sqlalchemy alembic
+          "psycopg[binary]" argon2-cffi pydantic-settings prometheus-client email-validator
+          httpx pandas pyarrow matplotlib networkx pytest-cov
       - run: pytest --cov=orbit/engine --cov=orbit/algorithms --cov-fail-under=80
         env:
           DATABASE_URL: postgresql+psycopg://orbit:orbitpw@127.0.0.1:55432/orbit
@@ -34,14 +45,59 @@ jobs:
 
   web:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: "22" }
-      - run: npm ci --prefix web
-      - run: npx --prefix web tsc --noEmit
-      - run: npx --prefix web eslint web
-      - run: npm run --prefix web test -- --run
+        with: { node-version: "22", cache: npm, cache-dependency-path: web/package-lock.json }
+      - run: npm ci
+        env: { PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1" }
+      - run: npm run typecheck
+      - run: npx eslint .
+      - run: npm run test
+
+  e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm, cache-dependency-path: web/package-lock.json }
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      # Playwright builds and serves the bundle itself (see web/playwright.config.ts), and
+      # the axe scan runs inside the same suite, so a WCAG regression fails the build.
+      - run: npm run e2e
+        env: { CI: "true" }
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: playwright-report, path: web/playwright-report/, retention-days: 7 }
+
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The development machine has no Docker, so this job is the only place the images are
+      # actually built. Until it runs, deploy/ is verified only to the extent that its base
+      # image digests resolve in the registry.
+      - run: docker build -f deploy/Dockerfile.api -t orbit-api:ci .
+      - run: docker build -f deploy/Dockerfile.web -t orbit-web:ci .
+      - name: the api image starts and answers /healthz
+        run: |
+          docker run -d --name orbit-api-ci -p 8000:8000 \
+            -e SESSION_SECRET=ci-secret-value-at-least-32-bytes-long!! \
+            -e DATABASE_URL=postgresql+psycopg://orbit:orbitpw@127.0.0.1:5432/orbit \
+            orbit-api:ci
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/healthz; then exit 0; fi
+            sleep 2
+          done
+          docker logs orbit-api-ci
+          exit 1
 
   security:
     runs-on: ubuntu-latest

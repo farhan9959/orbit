@@ -3,7 +3,7 @@ WORKDIR /build
 COPY pyproject.toml ./
 RUN pip install --no-cache-dir --prefix=/install \
     fastapi uvicorn[standard] sqlalchemy alembic "psycopg[binary]" argon2-cffi \
-    pydantic pydantic-settings prometheus-client email-validator \
+    pydantic pydantic-settings prometheus-client email-validator pyyaml \
     numpy scipy pandas pyarrow matplotlib networkx
 
 FROM python:3.12-slim@sha256:afc139a0a640942491ec481ad8dda10f2c5b753f5c969393b12480155fe15a63

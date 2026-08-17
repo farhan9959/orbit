@@ -141,3 +141,35 @@ A9_CASCADE_SWEEP = ExperimentSpec(
     ),
     trials=30,
 )
+
+
+A9_CEILING = ExperimentSpec(
+    name="a9-ceiling",
+    scenarios=tuple(
+        ScenarioSpec(
+            family=family,
+            nodes=60,
+            flows=150,
+            offered_load=0.9,
+            ticks=150,
+            failure=FailureScenario.CASCADING,
+            cascade_threshold=threshold,
+            cascade_dwell_ticks=3,
+        )
+        for family in (TopologyFamily.WAXMAN, TopologyFamily.SCALE_FREE)
+        for threshold in (0.90, 0.95, 0.98)
+    ),
+    algorithms=(
+        "spf-static",
+        "cspf",
+        "orbit",
+        "orbit-no-fallback",
+        "orbit-ceiling-1.0",
+        "orbit-ceiling-0.95",
+        "orbit-ceiling-0.9",
+        "orbit-ceiling-0.8",
+        "orbit-ceiling-0.7",
+        "orbit-ceiling-0.6",
+    ),
+    trials=30,
+)

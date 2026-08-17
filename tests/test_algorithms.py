@@ -19,6 +19,7 @@ from orbit.algorithms import (
     shortest_route,
 )
 from orbit.engine import Simulation, allocate
+from orbit.errors import ValidationError
 from orbit.generators import barabasi_albert, grid, ring, waxman
 from orbit.model import Flow, GraphView, Link, LinkState, Node, PathSet, Priority, Route, Topology
 
@@ -406,3 +407,37 @@ def test_orbit_survives_heavy_preemption_without_invalid_costs() -> None:
         view = GraphView(topology, tick, changed=True)
         routing = dict(controller.recompute(view, flows, routing))  # type: ignore[arg-type]
     assert routing
+
+
+def test_the_utilisation_ceiling_refuses_to_fill_a_link_past_it() -> None:
+    topology = Topology([Node("n0"), Node("n1")], [Link("e0", "n0", "n1", capacity_mbps=100.0)])
+    flows = [
+        Flow("f0", "n0", "n1", demand_mbps=50.0, priority=Priority.CRITICAL),
+        Flow("f1", "n0", "n1", demand_mbps=50.0, priority=Priority.HIGH),
+    ]
+    capped = OrbitController(OrbitConfig(utilisation_ceiling=0.7)).recompute(
+        view_of(topology), flows, {}
+    )
+    assert set(capped) == {"f0"}
+
+    uncapped = OrbitController().recompute(view_of(topology), flows, {})
+    assert set(uncapped) == {"f0", "f1"}
+
+
+def test_the_ceiling_overrides_the_best_effort_fallback() -> None:
+    """Otherwise the fallback would place the flow anyway and undo the ceiling."""
+    topology = Topology([Node("n0"), Node("n1")], [Link("e0", "n0", "n1", capacity_mbps=10.0)])
+    flows = [Flow("f0", "n0", "n1", demand_mbps=100.0)]
+    assert (
+        OrbitController(OrbitConfig(utilisation_ceiling=0.8)).recompute(
+            view_of(topology), flows, {}
+        )
+        == {}
+    )
+    assert "f0" in OrbitController().recompute(view_of(topology), flows, {})
+
+
+@pytest.mark.parametrize("bad", [0.0, 1.5, -0.1])
+def test_the_ceiling_is_validated(bad: float) -> None:
+    with pytest.raises(ValidationError, match="utilisation_ceiling"):
+        OrbitConfig(utilisation_ceiling=bad)

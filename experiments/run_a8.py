@@ -15,6 +15,7 @@ from experiments.specs.main import (
     A8_HEADLINE,
     A8_LOAD_SWEEP,
     A9_CASCADE_SWEEP,
+    A9_CEILING,
     SMOKE,
 )
 
@@ -26,6 +27,7 @@ SPECS = {
     "ablation": A8_ABLATION,
     "cascade": A8_CASCADE,
     "cascade-sweep": A9_CASCADE_SWEEP,
+    "ceiling": A9_CEILING,
 }
 
 

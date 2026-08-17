@@ -53,6 +53,12 @@ ABLATIONS: dict[str, OrbitConfig] = {
     "orbit-no-damping": OrbitConfig(damping=False),
     "orbit-no-fallback": OrbitConfig(best_effort_fallback=False),
     "orbit-restoration-only": OrbitConfig(protection=False, preemption=False, damping=False),
+    "orbit-ceiling-0.6": OrbitConfig(utilisation_ceiling=0.6),
+    "orbit-ceiling-0.95": OrbitConfig(utilisation_ceiling=0.95),
+    "orbit-ceiling-1.0": OrbitConfig(utilisation_ceiling=1.0),
+    "orbit-ceiling-0.7": OrbitConfig(utilisation_ceiling=0.7),
+    "orbit-ceiling-0.8": OrbitConfig(utilisation_ceiling=0.8),
+    "orbit-ceiling-0.9": OrbitConfig(utilisation_ceiling=0.9),
 }
 
 

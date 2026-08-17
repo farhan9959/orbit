@@ -88,6 +88,14 @@ class OrbitConfig:
     preemption: bool = True
     damping: bool = True
     best_effort_fallback: bool = True
+    utilisation_ceiling: float | None = None
+    """Refuse to place a flow if doing so would push a link past this utilisation.
+
+    Set strictly below the cascade threshold, this makes the controller decline traffic it
+    could carry, on the theory that an overloaded link is worse than an unserved flow when
+    overload propagates. When set, the best-effort fallback respects the ceiling too -
+    otherwise the fallback would immediately undo it.
+    """
     latency_weight: float = 1.0
     utilisation_weight: float = 10.0
     max_reroutes_per_window: int = 3
@@ -111,6 +119,11 @@ class OrbitConfig:
             raise ValidationError(
                 f"OrbitConfig: improvement_threshold must be >= 0, "
                 f"got {self.improvement_threshold!r}"
+            )
+        if self.utilisation_ceiling is not None and not 0.0 < self.utilisation_ceiling <= 1.0:
+            raise ValidationError(
+                f"OrbitConfig: utilisation_ceiling must be in (0, 1], "
+                f"got {self.utilisation_ceiling!r}"
             )
 
 
@@ -319,12 +332,21 @@ class OrbitController(BaseAlgorithm):
                 config.utilisation_weight * utilisation
             )
 
+        ceiling = config.utilisation_ceiling
+
         def allowed(link: Link) -> bool:
             if not topology.is_usable(link.id):
                 return False
-            if ignore_capacity:
-                return True
-            return residual.get(link.id, 0.0) >= flow.demand_mbps
+            free = residual.get(link.id, 0.0)
+            if ceiling is not None:
+                capacity = link.effective_capacity_mbps
+                if capacity <= 0.0:
+                    return False
+                if free - flow.demand_mbps < capacity * (1.0 - ceiling):
+                    return False
+            elif not ignore_capacity:
+                return free >= flow.demand_mbps
+            return True
 
         _, predecessor = shortest_path_tree(topology, flow.src, cost=cost, allowed=allowed)
         return route_from_tree(topology, predecessor, flow.src, flow.dst)

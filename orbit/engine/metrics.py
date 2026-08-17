@@ -116,6 +116,8 @@ class RunSummary:
     cascade_depth: int = 0
     reroutes: int = 0
     preemptions: int = 0
+    backup_activations: int = 0
+    """Reroutes served from a precomputed M1 backup rather than recomputed by M2."""
     time_to_restore_s: Mapping[Priority, float | None] = field(default_factory=dict)
     censored: bool = False
     time_to_converge_s: float | None = None
@@ -320,6 +322,7 @@ class MetricsAccumulator:
         self._first_failure_tick: int | None = None
         self._reroutes = 0
         self._preemptions = 0
+        self._backup_activations = 0
         self._route_change_ticks: list[int] = []
         self._last_tick = -1
 
@@ -341,6 +344,11 @@ class MetricsAccumulator:
             elif event.type is EventType.FLOW_REROUTED:
                 self._reroutes += 1
                 self._route_change_ticks.append(result.tick)
+                # Distinguishes M1 firing from M2 firing. Without it the ablation can only
+                # say that disabling protection changed nothing, not whether protection was
+                # ever reached in the first place.
+                if event.payload.get("via") == "BACKUP":
+                    self._backup_activations += 1
             elif event.type is EventType.FLOW_PREEMPTED:
                 self._preemptions += 1
                 self._route_change_ticks.append(result.tick)
@@ -387,6 +395,7 @@ class MetricsAccumulator:
             cascade_depth=cascade_depth,
             reroutes=self._reroutes,
             preemptions=self._preemptions,
+            backup_activations=self._backup_activations,
             time_to_restore_s=MappingProxyType(restore),
             censored=any(value is None for value in restore.values()),
             time_to_converge_s=converge,

@@ -226,3 +226,55 @@ A10_SCALE = ExperimentSpec(
     ),
     trials=30,
 )
+
+
+# A11: do M1, M3 and M4 ever matter?
+#
+# The a8-ablation grid found all three inert, but it varied only two families at one load
+# under two failures - conditions under which none of them can fire. This grid varies only
+# things already in the scenario identity (family, offered_load, failure), so no seed or id
+# changes and every earlier result stays reproducible.
+#
+# * RING is included because it is the sparse case. Preemption is attempted only when no
+#   path has residual capacity for the flow, which on a degree-two graph is common and on
+#   Waxman is rare - measured 14 preemptions per run on ring against 0 on Waxman.
+# * Loads to 2.0 raise mean per-flow demand from 45 to 101 Mbps against 100 Mbps links, so
+#   a flow can need more than one link can give and preemption has something to reclaim.
+# * CASCADING supplies the route churn M4 exists to damp: reroutes run 220-310 per run
+#   under cascade against ~155 under a single failure. The committed cascade grid has no
+#   ablation variants, so this has never been measured.
+#
+# Verdict criteria, fixed before the run (research/a8-findings.md records them too):
+# keep a mechanism if it wins pdr_critical in >= 25% of cells at Holm-adjusted p < 0.05
+# with no significant reversals; de-emphasise it if it wins a smaller reproducible set,
+# naming the condition; drop it from the contribution claim if it never wins a cell or
+# loses more cells than it wins. Firing is not a result.
+A11_MECHANISMS = ExperimentSpec(
+    name="a11-mechanisms",
+    scenarios=tuple(
+        ScenarioSpec(
+            family=family,
+            nodes=60,
+            flows=150,
+            offered_load=load,
+            ticks=150,
+            failure=failure,
+        )
+        for family in FAMILIES
+        for load in (0.9, 1.5, 2.0)
+        for failure in (
+            FailureScenario.CRITICAL_LINK,
+            FailureScenario.CASCADING,
+            FailureScenario.RANDOM_NODE_30,
+        )
+    ),
+    algorithms=(
+        "cspf",
+        "orbit",
+        "orbit-no-protection",
+        "orbit-no-preemption",
+        "orbit-no-damping",
+        "orbit-restoration-only",
+    ),
+    trials=30,
+)

@@ -112,6 +112,7 @@ class RunRecord:
     censored: bool
     reroutes: int
     preemptions: int
+    backup_activations: int
     cascade_depth: int
     cascade_threshold: float
     cascade_dwell_ticks: int
@@ -196,6 +197,7 @@ def run_one(
         censored=summary.censored,
         reroutes=summary.reroutes,
         preemptions=summary.preemptions,
+        backup_activations=summary.backup_activations,
         cascade_depth=summary.cascade_depth,
         cascade_threshold=spec.cascade_threshold,
         cascade_dwell_ticks=spec.cascade_dwell_ticks,

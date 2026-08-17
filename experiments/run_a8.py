@@ -18,6 +18,7 @@ from experiments.specs.main import (
     A9_CEILING,
     A9_CEILING_COST,
     A10_SCALE,
+    A11_MECHANISMS,
     SMOKE,
 )
 
@@ -32,6 +33,7 @@ SPECS = {
     "ceiling": A9_CEILING,
     "ceiling-cost": A9_CEILING_COST,
     "scale": A10_SCALE,
+    "mechanisms": A11_MECHANISMS,
 }
 
 

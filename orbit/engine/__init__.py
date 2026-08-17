@@ -20,7 +20,9 @@ from orbit.engine.metrics import (
     RunSummary,
     TickResult,
     path_intrinsic_loss,
+    peak_restore_fraction,
     queue_delay_ms,
+    time_to_converge,
     time_to_restore,
 )
 from orbit.engine.simulation import Simulation, SimulationConfig, summarise
@@ -44,9 +46,11 @@ __all__ = [
     "link_betweenness",
     "node_betweenness",
     "path_intrinsic_loss",
+    "peak_restore_fraction",
     "queue_delay_ms",
     "random_links",
     "random_nodes",
     "summarise",
+    "time_to_converge",
     "time_to_restore",
 ]

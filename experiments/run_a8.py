@@ -8,13 +8,22 @@ import time
 from collections.abc import Sequence
 
 from experiments.runner import execute
-from experiments.specs.main import A8_DUAL_CONTROL, A8_HEADLINE, A8_LOAD_SWEEP, SMOKE
+from experiments.specs.main import (
+    A8_ABLATION,
+    A8_CASCADE,
+    A8_DUAL_CONTROL,
+    A8_HEADLINE,
+    A8_LOAD_SWEEP,
+    SMOKE,
+)
 
 SPECS = {
     "smoke": SMOKE,
     "headline": A8_HEADLINE,
     "dual-control": A8_DUAL_CONTROL,
     "load-sweep": A8_LOAD_SWEEP,
+    "ablation": A8_ABLATION,
+    "cascade": A8_CASCADE,
 }
 
 
@@ -24,7 +33,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--only", nargs="*", choices=sorted(SPECS), default=None)
     args = parser.parse_args(argv)
 
-    chosen = args.only or ["headline", "dual-control", "load-sweep"]
+    chosen = args.only or ["headline", "dual-control", "load-sweep", "ablation", "cascade"]
     for name in chosen:
         spec = SPECS[name]
         total = len(spec.scenarios) * spec.trials * len(spec.algorithms)

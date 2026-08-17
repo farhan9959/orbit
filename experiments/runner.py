@@ -47,7 +47,18 @@ from orbit.scenarios import (
 RESULTS_ROOT = Path(__file__).resolve().parent / "results"
 
 
+ABLATIONS: dict[str, OrbitConfig] = {
+    "orbit-no-protection": OrbitConfig(protection=False),
+    "orbit-no-preemption": OrbitConfig(preemption=False),
+    "orbit-no-damping": OrbitConfig(damping=False),
+    "orbit-no-fallback": OrbitConfig(best_effort_fallback=False),
+    "orbit-restoration-only": OrbitConfig(protection=False, preemption=False, damping=False),
+}
+
+
 def make_algorithm(name: str, orbit_config: OrbitConfig | None = None) -> RoutingAlgorithm:
+    if name in ABLATIONS:
+        return OrbitController(ABLATIONS[name])
     if name == "spf-static":
         return StaticShortestPath()
     if name == "spf-reconverge":
@@ -96,6 +107,9 @@ class RunRecord:
     reroutes: int
     preemptions: int
     cascade_depth: int
+    time_to_converge_s: float | None
+    peak_restore_critical: float | None
+    optimality_gap: float | None
     control_seconds: float
     control_calls: int
     blackholed_flow_ticks: int
@@ -162,6 +176,9 @@ def run_one(
         reroutes=summary.reroutes,
         preemptions=summary.preemptions,
         cascade_depth=summary.cascade_depth,
+        time_to_converge_s=summary.time_to_converge_s,
+        peak_restore_critical=summary.peak_restore_fraction.get(Priority.CRITICAL),
+        optimality_gap=None,
         control_seconds=summary.control_seconds,
         control_calls=summary.control_calls,
         blackholed_flow_ticks=summary.overall.blackholed_flow_ticks,

@@ -189,7 +189,9 @@ def build_schedule(spec: ScenarioSpec, topology: Topology, seed: int) -> Failure
         events.append(
             FailureEvent(at, FailureKind.LINK_DOWN, highest_betweenness_links(topology, 2))
         )
-        cascade = CascadeRule(utilisation_threshold=0.98, dwell_ticks=3, enabled=True)
+        cascade = CascadeRule(
+            utilisation_threshold=0.98, dwell_ticks=3, max_failures=200, enabled=True
+        )
 
     return FailureSchedule(topology, events, cascade)
 

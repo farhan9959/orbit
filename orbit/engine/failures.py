@@ -70,7 +70,7 @@ class FailureEvent:
 class CascadeRule:
     utilisation_threshold: float = 0.95
     dwell_ticks: int = 3
-    max_failures: int = 10
+    max_failures: int = 200
     enabled: bool = False
 
     def __post_init__(self) -> None:

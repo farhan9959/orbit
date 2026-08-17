@@ -73,3 +73,46 @@ SMOKE = ExperimentSpec(
     scenarios=(ScenarioSpec(nodes=25, flows=40, ticks=50),),
     trials=3,
 )
+
+
+A8_ABLATION = ExperimentSpec(
+    name="a8-ablation",
+    scenarios=tuple(
+        ScenarioSpec(
+            family=family,
+            nodes=60,
+            flows=150,
+            offered_load=0.9,
+            ticks=150,
+            failure=failure,
+        )
+        for family in (TopologyFamily.WAXMAN, TopologyFamily.SCALE_FREE)
+        for failure in (FailureScenario.CONGESTION_SURGE, FailureScenario.CRITICAL_LINK)
+    ),
+    algorithms=(
+        "cspf",
+        "orbit",
+        "orbit-no-protection",
+        "orbit-no-preemption",
+        "orbit-no-damping",
+        "orbit-no-fallback",
+        "orbit-restoration-only",
+    ),
+    trials=30,
+)
+
+A8_CASCADE = ExperimentSpec(
+    name="a8-cascade",
+    scenarios=tuple(
+        ScenarioSpec(
+            family=family,
+            nodes=60,
+            flows=150,
+            offered_load=0.9,
+            ticks=150,
+            failure=FailureScenario.CASCADING,
+        )
+        for family in FAMILIES
+    ),
+    trials=30,
+)

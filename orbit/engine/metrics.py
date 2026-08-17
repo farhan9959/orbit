@@ -118,6 +118,8 @@ class RunSummary:
     preemptions: int = 0
     time_to_restore_s: Mapping[Priority, float | None] = field(default_factory=dict)
     censored: bool = False
+    time_to_converge_s: float | None = None
+    peak_restore_fraction: Mapping[Priority, float | None] = field(default_factory=dict)
     """Only classes that actually appeared in the run. A run with no CRITICAL traffic does
     not report a CRITICAL row, because a PDR over zero demand is not a measurement."""
 
@@ -229,6 +231,44 @@ _RESTORE_FRACTION = 0.95
 _RESTORE_DWELL_TICKS = 3
 
 
+def peak_restore_fraction(series: Sequence[float], failure_tick: int) -> float | None:
+    """Best post-failure delivered rate as a fraction of the pre-failure mean.
+
+    Reported alongside time-to-restore so a censored run is interpretable: a run that peaked
+    at 0.93 was close to the 0.95 criterion, while one that peaked at 0.4 lost capacity it
+    was never going to get back. Without this, censoring is a single opaque bit.
+    """
+    if failure_tick <= 0 or failure_tick >= len(series):
+        return None
+    baseline_slice = series[:failure_tick]
+    if not baseline_slice:
+        return None
+    baseline = math.fsum(baseline_slice) / len(baseline_slice)
+    if baseline <= 0.0:
+        return None
+    return max(series[failure_tick:], default=0.0) / baseline
+
+
+def time_to_converge(
+    route_change_ticks: Sequence[int], failure_tick: int, last_tick: int, tick_seconds: float
+) -> float | None:
+    """Time from failure until the control plane stops changing routes for 3 ticks.
+
+    Distinct from time-to-restore, and both are reported: the control plane can converge on
+    a route set that still does not deliver the traffic, because the capacity is gone.
+    Conflating them is a common way to overstate a recovery result.
+    """
+    if failure_tick < 0 or last_tick < failure_tick:
+        return None
+    after = sorted(tick for tick in route_change_ticks if tick >= failure_tick)
+    quiet_from = failure_tick
+    for tick in after:
+        quiet_from = tick + 1
+    if last_tick - quiet_from + 1 < _RESTORE_DWELL_TICKS:
+        return None
+    return (quiet_from - failure_tick) * tick_seconds
+
+
 def time_to_restore(
     series: Sequence[float], failure_tick: int, tick_seconds: float
 ) -> float | None:
@@ -280,6 +320,8 @@ class MetricsAccumulator:
         self._first_failure_tick: int | None = None
         self._reroutes = 0
         self._preemptions = 0
+        self._route_change_ticks: list[int] = []
+        self._last_tick = -1
 
     def add(self, result: TickResult) -> None:
         self._ticks += 1
@@ -292,13 +334,16 @@ class MetricsAccumulator:
             self._series.setdefault(priority, [0.0] * (self._ticks - 1)).append(
                 per_class.get(priority, 0.0)
             )
+        self._last_tick = result.tick
         for event in result.events:
             if event.type is EventType.FAILURE_INJECTED and self._first_failure_tick is None:
                 self._first_failure_tick = result.tick
             elif event.type is EventType.FLOW_REROUTED:
                 self._reroutes += 1
+                self._route_change_ticks.append(result.tick)
             elif event.type is EventType.FLOW_PREEMPTED:
                 self._preemptions += 1
+                self._route_change_ticks.append(result.tick)
 
     def add_all(self, results: Iterable[TickResult]) -> None:
         for result in results:
@@ -313,11 +358,20 @@ class MetricsAccumulator:
     ) -> RunSummary:
         duration_s = self._ticks * self._tick_seconds
         restore: dict[Priority, float | None] = {}
+        peak: dict[Priority, float | None] = {}
+        converge: float | None = None
         if self._first_failure_tick is not None:
             for priority, series in self._series.items():
                 restore[priority] = time_to_restore(
                     series, self._first_failure_tick, self._tick_seconds
                 )
+                peak[priority] = peak_restore_fraction(series, self._first_failure_tick)
+            converge = time_to_converge(
+                self._route_change_ticks,
+                self._first_failure_tick,
+                self._last_tick,
+                self._tick_seconds,
+            )
         return RunSummary(
             ticks=self._ticks,
             duration_s=duration_s,
@@ -335,4 +389,6 @@ class MetricsAccumulator:
             preemptions=self._preemptions,
             time_to_restore_s=MappingProxyType(restore),
             censored=any(value is None for value in restore.values()),
+            time_to_converge_s=converge,
+            peak_restore_fraction=MappingProxyType(peak),
         )

@@ -22,3 +22,8 @@ web/public/data/*.json
 .claude/launch.json
 .env
 api/migrations/versions/__pycache__/
+
+# Playwright
+web/test-results/
+web/playwright-report/
+web/blob-report/

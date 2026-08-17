@@ -245,8 +245,10 @@ export function LivePanel() {
               Actions
             </h3>
             <ol
-              className="max-h-40 overflow-y-auto rounded border border-slate-700 bg-slate-950 p-2 text-xs"
+              className="max-h-40 overflow-y-auto rounded border border-slate-700 bg-slate-950 p-2 text-xs focus:outline focus:outline-2 focus:outline-sky-400"
               aria-live="polite"
+              aria-label="Recent live-session actions, scrollable"
+              tabIndex={0}
             >
               {log.length === 0 && <li className="text-slate-400">Nothing yet.</li>}
               {log.map((entry, index) => (

@@ -28,9 +28,15 @@ export function EventLog({ run, tick }: { run: Run; tick: number }) {
           {visible.length} shown of {run.eventCount} in run
         </span>
       </h3>
+      {/* A scrollable region needs to be focusable or its content is unreachable without a
+          mouse: axe flags this as scrollable-region-focusable, and it is a real WCAG 2.1 AA
+          failure rather than a lint nit. tabIndex makes the list itself a tab stop so the
+          arrow keys can scroll it. */}
       <ol
-        className="max-h-64 overflow-y-auto rounded border border-slate-700 bg-slate-950"
+        className="max-h-64 overflow-y-auto rounded border border-slate-700 bg-slate-950 focus:outline focus:outline-2 focus:outline-sky-400"
         aria-live="polite"
+        aria-label="Control-plane event log, scrollable"
+        tabIndex={0}
       >
         {visible.length === 0 && (
           <li className="p-2 text-xs text-slate-400">No events yet at this tick.</li>

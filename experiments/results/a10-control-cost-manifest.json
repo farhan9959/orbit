@@ -1,6 +1,6 @@
 {
-  "git_sha": "631d9f7ac7289e54876fbf51c129eb1d8d5ec389",
-  "dirty": true,
+  "git_sha": "67670ef9561e7b43f2adca4bc6d1e478402b195f",
+  "dirty": false,
   "experiment": "a10-control-cost",
   "python": "3.14.6",
   "platform": "Windows-11-10.0.26200-SP0",
@@ -8,6 +8,6 @@
   "workers": 1,
   "note": "single-threaded on purpose; a10-scale's control_seconds is contended",
   "repeats": 5,
-  "started_at": "2026-08-18T05:14:43",
-  "wall_clock_s": 93.4901948000188
+  "started_at": "2026-08-18T05:16:37",
+  "wall_clock_s": 94.13266619999195
 }

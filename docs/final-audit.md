@@ -55,7 +55,7 @@ tests including two axe scans, 93.18% coverage on the engine and algorithms.**
 | F32 | Persist users, topologies, scenarios, experiments, runs, events, audit logs | Verified | 9 tables, Alembic migration |
 | F33 | Authentication and server-side role/ownership authorization | Verified | 25 security tests plus 4 new authz/CSRF tests on the live routes |
 | F34 | Health, readiness, metrics endpoints; structured logs with correlation IDs | Verified | `/healthz` deliberately checks nothing but the process |
-| F35 | Learning notes for every major component | Implemented | `docs/learning-notes.md`, `learning-notes-a3-a8.md` |
+| F35 | Learning notes for every major component | **Verified** | `docs/learning-notes.md`, `learning-notes-a3-a8.md`, `learning-notes-a10-a11.md`; the last covers the scale correction, control-cost driver, A11, the LP sweep, F2b, live sessions and the containers, which had no entries until now |
 | F36 | `research/{literature-review,methodology,results,paper}.md` | **Verified** | literature review written from the primary sources; paper §6 rewritten from it |
 | F37 | README with architecture, quick start, algorithms, real results, limitations | Verified | `README.md` |
 | F38 | Security audit and project audit with evidence per item | Verified | this file and `docs/final-security-audit.md` |

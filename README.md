@@ -227,7 +227,8 @@ experiments/    scenario specs, runner, statistics, figures, results
 api/            FastAPI app, models, scoped repository, auth, worker
 web/            React + TypeScript dashboard
 tests/          unit, property, differential, determinism, security
-docs/           requirements, architecture, simulation model, threat model, methodology
+docs/           requirements, architecture, simulation model, threat model, methodology,
+                learning notes, final audit
 research/       literature review, methodology as executed, findings, paper
 deploy/         Dockerfiles, nginx, compose  (built and run; `docker compose up` verified)
 ```

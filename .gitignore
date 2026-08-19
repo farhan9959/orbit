@@ -14,11 +14,14 @@ htmlcov/
 .env
 
 # Raw experiment output is large and regenerable; committed summaries live beside it.
-experiments/results/*.parquet
-experiments/figures/*.png
+# Deliberately NOT ignored, though generated: experiments/figures/*.png,
+# experiments/results/*.parquet and web/public/data/*.json. They were ignored, and the
+# result was an artifact that did not work when cloned - `make reproduce` reads Parquet and
+# none was published, and the dashboard fetches data/demo.json and rendered "Could not load
+# results". A project whose contribution claim is "reproducible artifact" has to reproduce
+# from a clean clone. The Parquet is 4.5 MB, smaller than the CSVs already committed.
 web/node_modules/
 web/dist/
-web/public/data/*.json
 .claude/launch.json
 .env
 api/migrations/versions/__pycache__/

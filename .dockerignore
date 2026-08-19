@@ -1,0 +1,25 @@
+# Without this the build context is the whole repo - .venv, node_modules, .git and the
+# results Parquet run to gigabytes, and Docker uploads all of it before reading a Dockerfile.
+.git
+.venv
+**/node_modules
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# Build outputs: the web image builds dist/ itself, so a stale local copy must not leak in.
+web/dist
+web/test-results
+web/playwright-report
+web/blob-report
+
+# Research artifacts. The images run the code, they do not need the measurements.
+experiments/results
+experiments/figures
+
+.env
+*.log

@@ -72,7 +72,7 @@ tests including two axe scans, 93.18% coverage on the engine and algorithms.**
 | N6 | Every state-changing endpoint enforces authn + authz server-side | Verified | scoped repository, 29 tests |
 | N7 | Expensive operations bounded server-side | Verified | Pydantic caps, quotas, rate limits |
 | N8 | ≥ 80% coverage on engine and algorithms | Verified | **93.18%**, enforced by `--cov-fail-under=80` |
-| N9 | `docker compose up` works on a clean machine | **UNVERIFIED** | no Docker on this machine. Base image digests verified against the registry API; a CI job builds both images and curls `/healthz`, but has not run |
+| N9 | `docker compose up` works on a clean machine | **Verified** | both images built; `docker compose up` on a wiped volume reaches a serving stack in ~20 s, Alembic migrations run, registration returns 201, `/healthz` answers through nginx. Three defects found and fixed in the process — see below |
 | N10 | Dashboard keyboard-navigable, non-colour-only status, WCAG AA | **Verified** | axe found and we fixed a real `scrollable-region-focusable` failure; two axe scans and a keyboard-traversal test now run in CI |
 
 ---
@@ -90,8 +90,23 @@ conclusions rather than confirming them.**
 2. **Docker and CI.** The web image's node digest returned **404** from the registry — a
    placeholder that could never have built. Replaced with a verified digest, nginx pinned too.
    CI had two defects that would have failed on first run (`npm run test` with no such script;
-   `eslint web` from a directory with no config). Every step but the container job and
-   gitleaks has now been executed locally.
+   `eslint web` from a directory with no config). Docker then became available and the images
+   were actually built, which found **three more defects that digest-checking could not have**:
+
+   * **No `.dockerignore` existed.** The build context was the entire repository — a 643 MB
+     `.venv`, `node_modules`, `.git` and the results Parquet — all uploaded to the daemon
+     before it read a Dockerfile.
+   * **The web container exited 1 on every start.** `cap_drop: [ALL]` removes `CHOWN`, and
+     nginx's entrypoint chowns its cache directories before dropping to uid 101. The
+     container never served a byte. Fixed by adding back the four capabilities the startup
+     sequence needs and no more.
+   * **The worker was permanently unhealthy.** It shares the API's Dockerfile and inherits its
+     `HEALTHCHECK`, which curls `/healthz` — but the worker runs `python -m api.worker` and
+     serves no HTTP, so the probe could never pass.
+
+   This is the clearest vindication in the project of the rule that verified means executed.
+   Every one of the three was invisible to static inspection, and the digest fix — the one
+   thing that *was* caught statically — was necessary but nowhere near sufficient.
 3. **Dashboard and live API.** Connected. The delta format changed to positional arrays so the
    live view reuses the replay canvas; `inject` and `switch-algorithm` are exposed with
    server-side target selection.
@@ -113,8 +128,8 @@ conclusions rather than confirming them.**
 
 ## Remaining honest gaps
 
-1. **Docker has never been built and CI has never run.** Both are blocked on this machine
-   (no Docker Desktop, no git remote). Everything runnable locally has been run.
+1. **CI has never run.** No git remote. Every job's commands have now been executed locally,
+   including the container job, which was the last one that could not be.
 2. **No real ISP topology.** The loader (F2b) now makes one loadable, and
    `experiments/topologies/abilene.yaml` is a shaped example with invented capacities, clearly
    labelled as such. The Internet Topology Zoo remains unused.
@@ -123,7 +138,10 @@ conclusions rather than confirming them.**
    its threshold and dwell time, not to its shape.
 5. **Waxman at scale is a corrected family, not the textbook one.** Its mean degree is pinned
    at 4; results at 500 nodes describe a sparse graph.
-6. **gitleaks has never run**, so N5 rests on `.gitignore` and inspection.
+5. **gitleaks has never run**, so N5 rests on `.gitignore` and inspection.
+6. **The compose stack was verified on Docker Desktop for Windows**, not on the
+   `ubuntu-latest` runner the CI job targets. The images are `linux/amd64` either way, but
+   the runner path itself is still unexercised.
 
 ## Honest summary
 

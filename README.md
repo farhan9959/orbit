@@ -165,11 +165,11 @@ project could only claim "capacity-awareness helps", which is already well known
 * **The optimality bound is small-topology only**, 9 to 15 nodes. Nothing bounds optimality at
   100 nodes or above.
 * **Distributed convergence is modelled from one vantage point**, not per-router.
-* **Docker has never been built.** The development machine has no Docker. Base image digests
-  are verified against the registry and CI has a job that builds and starts the images, but
-  that job has not run. Marked UNVERIFIED rather than implied to work.
-* **CI has never executed.** Every step was run locally with the same arguments except the
-  container job and gitleaks; the workflow itself has not run, because there is no remote.
+* **CI has never executed.** Every job's commands have been run locally with the same
+  arguments, but the workflow itself has not run, because there is no remote. gitleaks is the
+  one step never executed in any form.
+* **The containers were verified on Docker Desktop for Windows**, not on the `ubuntu-latest`
+  runner CI targets.
 
 ---
 
@@ -229,7 +229,7 @@ web/            React + TypeScript dashboard
 tests/          unit, property, differential, determinism, security
 docs/           requirements, architecture, simulation model, threat model, methodology
 research/       literature review, methodology as executed, findings, paper
-deploy/         Dockerfiles, nginx, compose  (digests verified; never built)
+deploy/         Dockerfiles, nginx, compose  (built and run; `docker compose up` verified)
 ```
 
 ---

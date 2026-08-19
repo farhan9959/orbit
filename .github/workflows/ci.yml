@@ -1,11 +1,13 @@
 name: ci
 on: [push, pull_request]
 
-# Every step here has been executed locally on Windows with the same arguments; what has
-# not been executed is the workflow itself, because this repository has no remote. Steps
-# that were previously wrong and are now fixed: the web job invoked `npm run test` against
-# a package.json with no `test` script, and ran `eslint web` from the repository root where
-# there is no eslint config. See docs/final-audit.md for what is verified and what is not.
+# Every step here has been executed locally on Windows with the same arguments, including
+# the container build; what has not been executed is the workflow itself, because this
+# repository has no remote. Defects already found and fixed by actually running these steps:
+# `npm run test` against a package.json with no `test` script, `eslint web` from a directory
+# with no config, a fabricated node base-image digest, a missing .dockerignore, nginx exiting
+# 1 under cap_drop ALL, and the worker inheriting an HTTP healthcheck it cannot answer.
+# See docs/final-audit.md for what is verified and what is not.
 
 jobs:
   lint:
@@ -81,9 +83,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # The development machine has no Docker, so this job is the only place the images are
-      # actually built. Until it runs, deploy/ is verified only to the extent that its base
-      # image digests resolve in the registry.
+      # Both images build and `docker compose up` serves on a wiped volume, verified locally
+      # on Docker Desktop. This job is what checks the same holds on a Linux runner.
       - run: docker build -f deploy/Dockerfile.api -t orbit-api:ci .
       - run: docker build -f deploy/Dockerfile.web -t orbit-web:ci .
       - name: the api image starts and answers /healthz

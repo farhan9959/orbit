@@ -10,7 +10,9 @@ Requirement-by-requirement status. The status words are used strictly:
 * **Not done** — exactly that.
 
 Measured at the final commit: **378 Python tests, 30 TypeScript tests, 8 Playwright browser
-tests including two axe scans, 93.18% coverage on the engine and algorithms.**
+tests including two axe scans, 93.18% coverage on the engine and algorithms.** All six CI
+jobs pass on `ubuntu-latest`, and every figure regenerates from a clean clone of the
+published repository.
 
 ---
 
@@ -72,7 +74,7 @@ tests including two axe scans, 93.18% coverage on the engine and algorithms.**
 | N6 | Every state-changing endpoint enforces authn + authz server-side | Verified | scoped repository, 29 tests |
 | N7 | Expensive operations bounded server-side | Verified | Pydantic caps, quotas, rate limits |
 | N8 | ≥ 80% coverage on engine and algorithms | Verified | **93.18%**, enforced by `--cov-fail-under=80` |
-| N9 | `docker compose up` works on a clean machine | **Verified** | both images built; `docker compose up` on a wiped volume reaches a serving stack in ~20 s, Alembic migrations run, registration returns 201, `/healthz` answers through nginx. Three defects found and fixed in the process — see below |
+| N9 | `docker compose up` works on a clean machine | **Verified** | built locally *and* on the CI Linux runner, which also starts the API image and curls `/healthz`; `docker compose up` on a wiped volume reaches a serving stack in ~20 s, Alembic migrations run, registration returns 201, `/healthz` answers through nginx. Three defects found and fixed in the process — see below |
 | N10 | Dashboard keyboard-navigable, non-colour-only status, WCAG AA | **Verified** | axe found and we fixed a real `scrollable-region-focusable` failure; two axe scans and a keyboard-traversal test now run in CI |
 
 ---
@@ -128,8 +130,9 @@ conclusions rather than confirming them.**
 
 ## Remaining honest gaps
 
-1. ~~**CI has never run.**~~ **It runs.** Pushed to `github.com/farhan9959/orbit`; the first
-   run failed three of six jobs, and the causes are recorded below because they are the point.
+1. ~~**CI has never run.**~~ **It runs, and it is green** — lint, test, web, e2e (with the
+   axe scan), containers and security, all six on `ubuntu-latest`. Getting there took three
+   rounds and the failures are recorded below, because they are the point.
 2. **No real ISP topology.** The loader (F2b) now makes one loadable, and
    `experiments/topologies/abilene.yaml` is a shaped example with invented capacities, clearly
    labelled as such. The Internet Topology Zoo remains unused.

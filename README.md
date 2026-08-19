@@ -1,5 +1,7 @@
 # ORBIT
 
+[![ci](https://github.com/farhan9959/orbit/actions/workflows/ci.yml/badge.svg)](https://github.com/farhan9959/orbit/actions/workflows/ci.yml)
+
 **A flow-level network resilience simulator and evaluation harness.** It measures whether a
 priority-aware, centrally-computed recovery controller restores traffic faster and preserves
 critical traffic better than conventional routing, under injected failures.
@@ -165,10 +167,12 @@ project could only claim "capacity-awareness helps", which is already well known
 * **The optimality bound is small-topology only**, 9 to 15 nodes. Nothing bounds optimality at
   100 nodes or above.
 * **Distributed convergence is modelled from one vantage point**, not per-router.
-* **CI runs on every push** at [farhan9959/orbit](https://github.com/farhan9959/orbit). Its
-  first run failed three of six jobs — the project turned out not to be pip-installable at
-  all, and the Playwright suite had been passing on Windows only because `localhost` resolves
-  to IPv4 there. Both are fixed; `docs/final-audit.md` records what the run found.
+* **CI runs green on every push** at
+  [farhan9959/orbit](https://github.com/farhan9959/orbit) — lint, tests, web, e2e with the
+  axe scan, container build, and gitleaks. Getting there took three rounds: the first run
+  failed three of six jobs, and the second exposed that the repository *did not work when
+  cloned*, because the Parquet `make reproduce` reads and the JSON the dashboard fetches were
+  both gitignored. `docs/final-audit.md` records each finding.
 
 ---
 

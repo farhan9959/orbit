@@ -225,16 +225,37 @@ Reporting these is the point, not an embarrassment.
 ## Repository layout
 
 ```
-orbit/          the library: model, generators, engine, algorithms, detector, LP bound
-experiments/    scenario specs, runner, statistics, figures, results
-api/            FastAPI app, models, scoped repository, auth, worker
-web/            React + TypeScript dashboard
-tests/          unit, property, differential, determinism, security
-docs/           requirements, architecture, simulation model, threat model, methodology,
-                learning notes, final audit
-research/       literature review, methodology as executed, findings, paper
-deploy/         Dockerfiles, nginx, compose  (built and run; `docker compose up` verified)
+orbit/              the library. No I/O, no framework, no database.
+  model/            topology, traffic, validation at the innermost trust boundary
+  generators/       seeded grid, ring, Waxman, Barabasi-Albert
+  engine/           allocator, tick loop, failure injection, metrics
+  algorithms/       four baselines and the ORBIT controller
+  detect/           failure detection: the fairness-critical component
+  topospec.py       YAML topology loader (F2b)      optimal.py  LP upper bound (F22)
+  cli.py            headless entry point            rng.py      seeded streams
+
+experiments/        the harness. Everything that writes to disk lives here.
+  specs/            experiment grids, fixed before results exist
+  runner.py         paired execution + reproducibility manifest
+  analysis.py       Wilcoxon, Holm, Cliff's delta, bootstrap CI
+  figures.py        `make reproduce` - regenerates every figure from committed Parquet
+  optimality.py     LP gap sweep        control_cost.py  uncontended N4 timing
+  topologies/       hand-written topology specs
+  results/          committed raw data + manifests    figures/  generated plots and tables
+
+api/                FastAPI app, scoped repository, auth, worker, live sessions
+web/                React + TypeScript dashboard (replay and live modes) + Playwright e2e
+tests/              unit, property, differential, determinism, security
+docs/               01-06 design docs, learning notes, final audit, security audit
+research/           literature review, methodology as executed, findings, paper
+deploy/             Dockerfiles and nginx  (built and run; `docker compose up` verified)
+.github/            CI workflow + annotate.py, which makes failures readable without admin
 ```
+
+Two conventions worth knowing. **`orbit/` never does I/O** — the CLI owns the filesystem, the
+harness owns the disk, so the library stays testable and importable anywhere. And
+**`experiments/results/` is committed**, Parquet and all, because a reproducibility claim that
+needs files you do not have is not a claim.
 
 ---
 

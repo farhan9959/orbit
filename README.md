@@ -165,11 +165,10 @@ project could only claim "capacity-awareness helps", which is already well known
 * **The optimality bound is small-topology only**, 9 to 15 nodes. Nothing bounds optimality at
   100 nodes or above.
 * **Distributed convergence is modelled from one vantage point**, not per-router.
-* **CI has never executed.** Every job's commands have been run locally with the same
-  arguments, but the workflow itself has not run, because there is no remote. gitleaks is the
-  one step never executed in any form.
-* **The containers were verified on Docker Desktop for Windows**, not on the `ubuntu-latest`
-  runner CI targets.
+* **CI runs on every push** at [farhan9959/orbit](https://github.com/farhan9959/orbit). Its
+  first run failed three of six jobs — the project turned out not to be pip-installable at
+  all, and the Playwright suite had been passing on Windows only because `localhost` resolves
+  to IPv4 there. Both are fixed; `docs/final-audit.md` records what the run found.
 
 ---
 

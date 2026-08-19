@@ -68,7 +68,7 @@ tests including two axe scans, 93.18% coverage on the engine and algorithms.**
 | N2 | 100-node / 200-flow / 60 s run under 30 s | **Verified** | measured 5.1 s (CSPF) and 6.0 s (ORBIT) |
 | N3 | Identical seed ⇒ identical metrics | Verified | hash test; confirmed across independent process pools |
 | N4 | Control recomputation < 100 ms at 100 nodes | **Verified** | 65.7 ms Waxman, 72.7 ms scale-free, single-threaded. Stops holding between 100 and 250 nodes, and the curve says so |
-| N5 | No secret material in the repository | Implemented | `.env` ignored from the first commit; gitleaks configured but never executed |
+| N5 | No secret material in the repository | **Verified** | gitleaks scanned all 41 commits and 36 MB of history: **no leaks found**. Runs in CI on every push against the full history (`fetch-depth: 0`) |
 | N6 | Every state-changing endpoint enforces authn + authz server-side | Verified | scoped repository, 29 tests |
 | N7 | Expensive operations bounded server-side | Verified | Pydantic caps, quotas, rate limits |
 | N8 | ≥ 80% coverage on engine and algorithms | Verified | **93.18%**, enforced by `--cov-fail-under=80` |
@@ -128,8 +128,8 @@ conclusions rather than confirming them.**
 
 ## Remaining honest gaps
 
-1. **CI has never run.** No git remote. Every job's commands have now been executed locally,
-   including the container job, which was the last one that could not be.
+1. ~~**CI has never run.**~~ **It runs.** Pushed to `github.com/farhan9959/orbit`; the first
+   run failed three of six jobs, and the causes are recorded below because they are the point.
 2. **No real ISP topology.** The loader (F2b) now makes one loadable, and
    `experiments/topologies/abilene.yaml` is a shaped example with invented capacities, clearly
    labelled as such. The Internet Topology Zoo remains unused.
@@ -138,10 +138,34 @@ conclusions rather than confirming them.**
    its threshold and dwell time, not to its shape.
 5. **Waxman at scale is a corrected family, not the textbook one.** Its mean degree is pinned
    at 4; results at 500 nodes describe a sparse graph.
-5. **gitleaks has never run**, so N5 rests on `.gitignore` and inspection.
-6. **The compose stack was verified on Docker Desktop for Windows**, not on the
-   `ubuntu-latest` runner the CI job targets. The images are `linux/amd64` either way, but
-   the runner path itself is still unexercised.
+5. **The optimality bound and the cascade rule form** remain as stated above; neither is
+   closed by CI.
+
+## What the first CI run found
+
+CI had never executed. Its first run failed three of six jobs, and every failure was a real
+defect that local testing structurally could not have surfaced:
+
+* **`test` — the project was not installable at all.** `pyproject.toml` had no
+  `[build-system]` and no package configuration, so `pip install -e .` fell back to
+  setuptools' flat-layout discovery, found four top-level packages and refused to guess. This
+  was invisible locally because pytest's `pythonpath = ["."]` makes the checkout importable
+  *without* installing it — the documented convenience that also hid the bug.
+* **`e2e` — a three-minute timeout with no error.** `vite preview` binds to `localhost`,
+  which resolves to `::1` first on Linux, while Playwright polls IPv4 `127.0.0.1`. It waited
+  the full `webServer` timeout on a socket nothing was listening on. Windows resolves
+  `localhost` to `127.0.0.1`, so the same suite passed there every time.
+* **`security` — gitleaks-action fails closed** without a licence key for some account types.
+
+`containers` passed on the first attempt, which was the job predicted to be riskiest — the
+prediction was wrong, and the two jobs assumed safe were the ones that broke.
+
+Two changes came out of this beyond the fixes. Failing steps now echo their log tail as a
+workflow annotation (`.github/annotate.py`), because job logs need admin rights to download
+while annotations are public — a red tick nobody can read the reason for is barely better
+than no CI. And the `web` job now runs `npm run build`, since `tsc -b` is a different code
+path from `tsc --noEmit` and was previously exercised only inside the e2e web server, where
+a build break presents as a server that never came up.
 
 ## Honest summary
 

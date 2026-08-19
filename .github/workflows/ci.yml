@@ -1,12 +1,15 @@
 name: ci
 on: [push, pull_request]
 
-# Every step here has been executed locally on Windows with the same arguments, including
-# the container build; what has not been executed is the workflow itself, because this
-# repository has no remote. Defects already found and fixed by actually running these steps:
-# `npm run test` against a package.json with no `test` script, `eslint web` from a directory
-# with no config, a fabricated node base-image digest, a missing .dockerignore, nginx exiting
-# 1 under cap_drop ALL, and the worker inheriting an HTTP healthcheck it cannot answer.
+# Job logs need admin rights to download, but annotations are readable by anyone on a public
+# repo. Steps that can fail in an interesting way therefore echo their tail as an annotation:
+# a red tick whose reason you cannot read is barely better than no CI.
+#
+# Defects already found by running these steps rather than reading them: `npm run test`
+# against a package.json with no `test` script, `eslint web` from a directory with no config,
+# a fabricated node base-image digest, a missing .dockerignore, nginx exiting 1 under
+# cap_drop ALL, a worker inheriting an HTTP healthcheck it cannot answer, and a pyproject
+# with no [build-system] that could not be pip-installed at all.
 # See docs/final-audit.md for what is verified and what is not.
 
 jobs:
@@ -16,11 +19,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install ruff black mypy types-PyYAML
+      - run: pip install ruff black mypy types-PyYAML pydantic pyyaml numpy scipy
       - run: ruff check orbit tests experiments api
       - run: black --check orbit tests experiments api
-      # mypy is strict on orbit/, which now includes the Pydantic-typed topology loader.
-      - run: pip install pydantic pyyaml numpy scipy
+      # mypy is strict on orbit/, which includes the Pydantic-typed topology loader.
       - run: mypy
 
   test:
@@ -40,10 +42,16 @@ jobs:
           pip install -e ".[dev,spec,lp]" fastapi "uvicorn[standard]" sqlalchemy alembic
           "psycopg[binary]" argon2-cffi pydantic-settings prometheus-client email-validator
           httpx pandas pyarrow matplotlib networkx pytest-cov
-      - run: pytest --cov=orbit/engine --cov=orbit/algorithms --cov-fail-under=80
+      - name: pytest
+        run: |
+          set -o pipefail
+          pytest --cov=orbit/engine --cov=orbit/algorithms --cov-fail-under=80 2>&1 | tee /tmp/pytest.log
         env:
           DATABASE_URL: postgresql+psycopg://orbit:orbitpw@127.0.0.1:55432/orbit
           SESSION_SECRET: ci-secret-value-at-least-32-bytes-long!!
+      - name: report failure
+        if: failure()
+        run: python .github/annotate.py pytest /tmp/pytest.log
 
   web:
     runs-on: ubuntu-latest
@@ -59,6 +67,10 @@ jobs:
       - run: npm run typecheck
       - run: npx eslint .
       - run: npm run test
+      # `npm run build` runs `tsc -b`, a different code path from `tsc --noEmit`, and was
+      # previously exercised only inside the e2e job's web server. A build break should fail
+      # here, where the cause is obvious, rather than there as a server that never came up.
+      - run: npm run build
 
   e2e:
     runs-on: ubuntu-latest
@@ -71,13 +83,25 @@ jobs:
         with: { node-version: "22", cache: npm, cache-dependency-path: web/package-lock.json }
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      # Playwright builds and serves the bundle itself (see web/playwright.config.ts), and
-      # the axe scan runs inside the same suite, so a WCAG regression fails the build.
-      - run: npm run e2e
+      # Playwright builds and serves the bundle itself (see web/playwright.config.ts), and the
+      # axe scan runs in the same suite, so a WCAG regression fails the build.
+      - name: playwright
+        run: |
+          set -o pipefail
+          npm run e2e 2>&1 | tee /tmp/e2e.log
         env: { CI: "true" }
+      - name: report failure
+        if: failure()
+        run: python ../.github/annotate.py playwright /tmp/e2e.log
       - uses: actions/upload-artifact@v4
         if: failure()
-        with: { name: playwright-report, path: web/playwright-report/, retention-days: 7 }
+        with:
+          name: playwright-report
+          path: |
+            web/playwright-report/
+            web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
   containers:
     runs-on: ubuntu-latest
@@ -104,9 +128,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: gitleaks/gitleaks-action@v2
+        # gitleaks scans history, so a shallow clone would silently scan almost nothing.
+        with: { fetch-depth: 0 }
+      # The upstream action wants a licence key for some account types and fails closed
+      # without one. The scanner is free, so this runs the same image and the same command
+      # that was run locally against the full history, and fails the job on a hit.
+      - name: gitleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
+            detect --source=/repo --no-banner --redact --exit-code 1
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install pip-audit bandit
       - run: bandit -r orbit api -ll
+      # Advisory only: a new CVE in a transitive dependency should surface, not block a
+      # research artifact's build. Read the log rather than trusting the tick.
       - run: pip-audit || true

@@ -1,3 +1,15 @@
+# Without an explicit build-system, `pip install -e .` falls back to setuptools' flat-layout
+# auto-discovery, which finds four top-level packages (orbit, api, experiments, tests) and
+# refuses to guess. CI installs the project as a package, so that path has to work; locally
+# it never ran, because pytest's `pythonpath` below makes the checkout importable without it.
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+# `tests` is deliberately absent: it is not shipped, and pytest reaches it via `pythonpath`.
+packages = ["orbit", "api", "experiments"]
+
 [project]
 name = "orbit"
 version = "0.0.1"

@@ -20,7 +20,11 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: "npm run build && npm run preview -- --port 4173 --strictPort",
+    // --host 127.0.0.1 is load-bearing on Linux. Without it vite preview binds to
+    // "localhost", which resolves to ::1 first on most Linux hosts, while the url below is
+    // IPv4 - so Playwright polls a socket nothing is listening on and dies after the full
+    // timeout with no useful error. Windows resolves localhost to 127.0.0.1 and hides this.
+    command: "npm run build && npm run preview -- --port 4173 --strictPort --host 127.0.0.1",
     url: "http://127.0.0.1:4173",
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,

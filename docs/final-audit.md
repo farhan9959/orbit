@@ -41,7 +41,7 @@ tests including two axe scans, 93.18% coverage on the engine and algorithms.**
 | F23 | Declare an experiment as a spec and run it headless | Verified | `orbit/scenarios.py`, `orbit/cli.py`, `experiments/specs/` |
 | F24 | Paired seeds: identical world for every algorithm | Verified | `seed_key`; asserted by test |
 | F25 | PDR per class, throughput, latency, recovery, churn, preemption, control time | Verified | `RunRecord` carries all of them |
-| F26 | Plots and tables from raw data in one command | Verified | `make reproduce`, now including the scale, mechanism and optimality figures |
+| F26 | Plots and tables from raw data in one command | **Verified from a clean clone** | `make reproduce`; the Parquet it reads had been gitignored, so this only became true once the results were actually published. Checked by cloning the published repo and regenerating all ten figures |
 | F27 | Reproducibility manifest in every results artifact | Verified | git SHA, dirty flag, platform, packages; **all 11 result sets record `dirty: false`** |
 
 ## Tier B — the platform
@@ -159,6 +159,22 @@ defect that local testing structurally could not have surfaced:
 
 `containers` passed on the first attempt, which was the job predicted to be riskiest — the
 prediction was wrong, and the two jobs assumed safe were the ones that broke.
+
+**The second run found something worse than a CI bug: the repository did not work when
+cloned.** Three generated-but-essential outputs were gitignored.
+
+* `experiments/results/*.parquet` — `figures.py` reads Parquet and **zero Parquet files were
+  published**, so `make reproduce` could not run on a fresh clone at all. The 20 MB of CSVs
+  that *were* committed are read by nothing. The Parquet is 4.5 MB.
+* `web/public/data/*.json` — the dashboard fetches `data/demo.json` on load, so a clone
+  rendered "Could not load results". That is what the e2e job actually hit.
+* `experiments/figures/*.png` — referenced by the paper and README.
+
+`figures.py`'s own docstring said "input is the committed Parquet". It was not committed.
+For a project whose one surviving contribution claim is *reproducible artifact*, this was the
+most serious defect in the audit — and it was invisible from inside a working tree, where
+every one of those files is present. Now fixed, and verified by cloning the published
+repository into a clean directory and regenerating all ten figures from it.
 
 Two changes came out of this beyond the fixes. Failing steps now echo their log tail as a
 workflow annotation (`.github/annotate.py`), because job logs need admin rights to download
